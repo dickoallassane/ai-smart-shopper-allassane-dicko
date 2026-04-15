@@ -38,10 +38,8 @@ apps/web/src/
 │   │   │   └── route.ts              # or page.tsx, depending on provider flow
 │   │   └── extension-connect/        # “Connect extension” — token / one-time code / deep link UX
 │   │       └── page.tsx
-│   ├── (marketing)/                  # Route group — public marketing pages
-│   │   ├── page.tsx                  # landing (or move root page here)
-│   │   └── pricing/
-│   │       └── page.tsx
+│   ├── (marketing)/                  # Route group — public landing only (`/` home)
+│   │   └── page.tsx
 │   ├── (dashboard)/                  # optional — signed-in web-only areas (not extension UI)
 │   │   └── profile/
 │   ├── api/                          # Route Handlers (BFF)
@@ -53,7 +51,6 @@ apps/web/src/
 │   │       └── extension/
 │   │           └── route.ts          # POST validate / exchange session for extension
 │   ├── layout.tsx
-│   ├── page.tsx                      # Root entry (or thin redirect into (marketing))
 │   ├── providers.tsx                 # e.g. TanStack Query
 │   └── globals.css                   # or re-export from styles/
 │

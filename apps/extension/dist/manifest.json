@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "ShopFriend (dev)",
+  "version": "0.0.1",
+  "description": "Smart Shopper companion — development build",
+  "action": {
+    "default_title": "ShopFriend",
+    "default_popup": "src/popup/index.html"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "background": {
+    "service_worker": "service-worker-loader.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "http://localhost:3000/*"
+  ],
+  "content_scripts": [
+    {
+      "js": [
+        "assets/content-script.ts-loader-DPfqjjt8.js"
+      ],
+      "matches": [
+        "https://www.amazon.com/*"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "https://www.amazon.com/*"
+      ],
+      "resources": [
+        "assets/insight-contract-BHP7Jkrz.js",
+        "assets/content-script.ts-BpVOTp3m.js"
+      ],
+      "use_dynamic_url": false
+    }
+  ]
+}
