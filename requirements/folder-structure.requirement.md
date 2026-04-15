@@ -1,0 +1,36 @@
+folder structure
+- app
+  - (auth)
+    -  sign-in
+    - callback
+  - (dashboard)
+    - events
+    - profile
+  - (marketing)
+    - pricing
+  - api
+- features
+  - events
+    - components
+    - hooks
+    - actions.ts
+    - index.ts
+  - users
+- lib
+  - upload
+- server
+  - auth
+    - config.ts
+    - session.ts
+  - db
+    - client.ts
+    -schema.prisma
+  - mutations
+    - events.mutations.ts
+  - queries
+    - events.queries.ts
+  - services
+- styles
+- tests
+- ui
+- middleware.ts
