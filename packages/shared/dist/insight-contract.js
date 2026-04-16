@@ -29,11 +29,27 @@ export const pricingRowSchema = z.object({
     fetchedAt: z.string().datetime({ offset: true }),
     caveat: z.string().max(500)
 });
+/** Normalized Affiliate.com (or compatible) product row for UI / extension text */
+export const affiliateMatchSchema = z.object({
+    offerId: z.string().max(128),
+    productName: z.string().max(500),
+    description: z.string().max(2000).optional(),
+    merchantName: z.string().max(200),
+    networkName: z.string().max(200),
+    priceDisplay: z.string().max(64),
+    currency: z.string().max(16).optional(),
+    /** Tracked / affiliate chain URL (may still contain `@@@` if publisher id is not configured) */
+    clickUrl: z.string().url(),
+    /** Retailer product page when API provides it (second option when commission link is uncertain) */
+    directUrl: z.string().url().optional(),
+    imageUrl: z.string().url().optional()
+});
 export const insightResponseSchema = z.object({
     version: z.literal('1'),
     requestId: z.string().uuid(),
     cards: z.array(insightCardSchema),
     pricingRows: z.array(pricingRowSchema).max(20).optional(),
+    affiliateMatches: z.array(affiliateMatchSchema).max(15).optional(),
     limitations: z.array(z.string().max(500)).max(32),
     generatedAt: z.string().datetime({ offset: true })
 });

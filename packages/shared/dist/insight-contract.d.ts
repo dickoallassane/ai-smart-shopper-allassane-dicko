@@ -197,6 +197,44 @@ export declare const pricingRowSchema: z.ZodObject<{
     fetchedAt: string;
     caveat: string;
 }>;
+/** Normalized Affiliate.com (or compatible) product row for UI / extension text */
+export declare const affiliateMatchSchema: z.ZodObject<{
+    offerId: z.ZodString;
+    productName: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
+    merchantName: z.ZodString;
+    networkName: z.ZodString;
+    priceDisplay: z.ZodString;
+    currency: z.ZodOptional<z.ZodString>;
+    /** Tracked / affiliate chain URL (may still contain `@@@` if publisher id is not configured) */
+    clickUrl: z.ZodString;
+    /** Retailer product page when API provides it (second option when commission link is uncertain) */
+    directUrl: z.ZodOptional<z.ZodString>;
+    imageUrl: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    offerId: string;
+    productName: string;
+    merchantName: string;
+    networkName: string;
+    priceDisplay: string;
+    clickUrl: string;
+    description?: string | undefined;
+    currency?: string | undefined;
+    directUrl?: string | undefined;
+    imageUrl?: string | undefined;
+}, {
+    offerId: string;
+    productName: string;
+    merchantName: string;
+    networkName: string;
+    priceDisplay: string;
+    clickUrl: string;
+    description?: string | undefined;
+    currency?: string | undefined;
+    directUrl?: string | undefined;
+    imageUrl?: string | undefined;
+}>;
+export type AffiliateMatch = z.infer<typeof affiliateMatchSchema>;
 export declare const insightResponseSchema: z.ZodObject<{
     version: z.ZodLiteral<"1">;
     requestId: z.ZodString;
@@ -271,6 +309,42 @@ export declare const insightResponseSchema: z.ZodObject<{
         fetchedAt: string;
         caveat: string;
     }>, "many">>;
+    affiliateMatches: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        offerId: z.ZodString;
+        productName: z.ZodString;
+        description: z.ZodOptional<z.ZodString>;
+        merchantName: z.ZodString;
+        networkName: z.ZodString;
+        priceDisplay: z.ZodString;
+        currency: z.ZodOptional<z.ZodString>;
+        /** Tracked / affiliate chain URL (may still contain `@@@` if publisher id is not configured) */
+        clickUrl: z.ZodString;
+        /** Retailer product page when API provides it (second option when commission link is uncertain) */
+        directUrl: z.ZodOptional<z.ZodString>;
+        imageUrl: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        offerId: string;
+        productName: string;
+        merchantName: string;
+        networkName: string;
+        priceDisplay: string;
+        clickUrl: string;
+        description?: string | undefined;
+        currency?: string | undefined;
+        directUrl?: string | undefined;
+        imageUrl?: string | undefined;
+    }, {
+        offerId: string;
+        productName: string;
+        merchantName: string;
+        networkName: string;
+        priceDisplay: string;
+        clickUrl: string;
+        description?: string | undefined;
+        currency?: string | undefined;
+        directUrl?: string | undefined;
+        imageUrl?: string | undefined;
+    }>, "many">>;
     limitations: z.ZodArray<z.ZodString, "many">;
     generatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
@@ -297,6 +371,18 @@ export declare const insightResponseSchema: z.ZodObject<{
         fetchedAt: string;
         caveat: string;
     }[] | undefined;
+    affiliateMatches?: {
+        offerId: string;
+        productName: string;
+        merchantName: string;
+        networkName: string;
+        priceDisplay: string;
+        clickUrl: string;
+        description?: string | undefined;
+        currency?: string | undefined;
+        directUrl?: string | undefined;
+        imageUrl?: string | undefined;
+    }[] | undefined;
 }, {
     version: "1";
     requestId: string;
@@ -320,6 +406,18 @@ export declare const insightResponseSchema: z.ZodObject<{
         sourceUrl: string;
         fetchedAt: string;
         caveat: string;
+    }[] | undefined;
+    affiliateMatches?: {
+        offerId: string;
+        productName: string;
+        merchantName: string;
+        networkName: string;
+        priceDisplay: string;
+        clickUrl: string;
+        description?: string | undefined;
+        currency?: string | undefined;
+        directUrl?: string | undefined;
+        imageUrl?: string | undefined;
     }[] | undefined;
 }>;
 export type InsightResponse = z.infer<typeof insightResponseSchema>;

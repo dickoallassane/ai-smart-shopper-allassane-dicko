@@ -1,5 +1,6 @@
 import { insightRequestSchema } from '@shopfriend/shared'
 import { type KeyboardEvent, useEffect, useState } from 'react'
+import { getStoredProductPayloadForTab } from '../lib/pdp-session-storage'
 import { SmileLogo } from '../ui/SmileLogo'
 
 type PdpHint = 'none' | 'invalid' | 'ready'
@@ -9,8 +10,12 @@ export const PopupApp = () => {
 
   useEffect(() => {
     const loadPayload = async () => {
-      const session = await chrome.storage.session.get('lastProductPayload')
-      const raw = session.lastProductPayload
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!tab?.id) {
+        setPdpHint('none')
+        return
+      }
+      const raw = await getStoredProductPayloadForTab(tab.id)
       if (!raw) {
         setPdpHint('none')
         return

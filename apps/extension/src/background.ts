@@ -1,12 +1,31 @@
-import type { InsightRequest, InsightResponse } from '@shopfriend/shared'
+import type { InsightRequest, InsightResponse, ProductPayload } from '@shopfriend/shared'
+import {
+  INSIGHT_CONTEXT_TAB_BY_WINDOW_ID,
+  PRODUCT_PAYLOAD_BY_TAB_ID,
+  mergeProductPayloadForTab,
+  type InsightContextTabByWindowId,
+  type ProductPayloadByTabId
+} from './lib/pdp-session-storage'
 
-const DEFAULT_API_BASE = 'http://localhost:3000'
+const stripTrailingSlash = (value: string) => value.replace(/\/$/, '')
+
+const resolveApiBase = (): string => {
+  const fromEnv = import.meta.env.VITE_SHOPFRIEND_API_ORIGIN?.trim()
+  if (fromEnv && fromEnv.length > 0) {
+    return stripTrailingSlash(fromEnv)
+  }
+  if (import.meta.env.DEV) {
+    return 'http://localhost:3000'
+  }
+  console.warn('[ShopFriend] VITE_SHOPFRIEND_API_ORIGIN is unset; set it at build time in apps/extension/.env')
+  return ''
+}
 
 const getApiBase = (): string => {
   if (typeof chrome === 'undefined' || !chrome.storage?.local) {
-    return DEFAULT_API_BASE
+    return resolveApiBase()
   }
-  return DEFAULT_API_BASE
+  return resolveApiBase()
 }
 
 const fetchInsight = async (
@@ -34,14 +53,31 @@ const fetchInsight = async (
   return (await response.json()) as InsightResponse
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'OPEN_SIDE_PANEL') {
     const open = async () => {
       const tabId = message.tabId as number | undefined
       if (tabId === undefined) {
         return
       }
+      // Must open the side panel before any other `await` — Chrome ties
+      // `sidePanel.open` to the user gesture from the popup; earlier awaits
+      // (tabs.get, storage) consume that chain and the open silently fails.
       await chrome.sidePanel.open({ tabId })
+      try {
+        const tab = await chrome.tabs.get(tabId)
+        const session = await chrome.storage.session.get(INSIGHT_CONTEXT_TAB_BY_WINDOW_ID)
+        const prev =
+          (session[INSIGHT_CONTEXT_TAB_BY_WINDOW_ID] as InsightContextTabByWindowId | undefined) ?? {}
+        await chrome.storage.session.set({
+          [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: {
+            ...prev,
+            [String(tab.windowId)]: tabId
+          }
+        })
+      } catch (error) {
+        console.warn('[ShopFriend] Could not persist insight context tab for window', error)
+      }
     }
     void open()
     return
@@ -81,11 +117,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === 'PRODUCT_PAYLOAD') {
-    const product = message.payload
-    console.debug('[ShopFriend] PRODUCT_PAYLOAD received', product)
-    void chrome.storage.session.set({
-      lastProductPayload: product
-    })
+    const tabId = sender.tab?.id
+    if (tabId === undefined) {
+      return undefined
+    }
+    const product = message.payload as ProductPayload
+    console.debug('[ShopFriend] PRODUCT_PAYLOAD received', { tabId, product })
+    void (async () => {
+      const session = await chrome.storage.session.get(PRODUCT_PAYLOAD_BY_TAB_ID)
+      const prev = session[PRODUCT_PAYLOAD_BY_TAB_ID] as ProductPayloadByTabId | undefined
+      const map = mergeProductPayloadForTab(prev, String(tabId), product)
+      await chrome.storage.session.set({ [PRODUCT_PAYLOAD_BY_TAB_ID]: map })
+    })()
   }
 
   return undefined

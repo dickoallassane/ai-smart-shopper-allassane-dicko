@@ -20,6 +20,8 @@ Monorepo for the **Next.js** web app (landing + auth + API) and the **Chrome MV3
 pnpm install
 cp apps/web/.env.example apps/web/.env.local
 # fill Supabase keys when ready; insight API works without them for local dev
+# Optional: Affiliate.com product search on insight — see apps/web/docs/affiliate-network.md
+#   AFFILIATE_NETWORKS_API_KEY, AFFILIATE_NETWORKS_API_BASE_URL, AFFILIATE_NETWORKS_REQUEST_JSON
 pnpm build
 ```
 
@@ -36,4 +38,5 @@ Load **Unpacked** extension from `apps/extension/dist` after a build. The dev ma
 
 - [requirements/tech-stack.requirement.md](requirements/tech-stack.requirement.md)
 - [apps/web/docs/extension-auth-flow.md](apps/web/docs/extension-auth-flow.md)
+- [apps/web/docs/affiliate-network.md](apps/web/docs/affiliate-network.md) — Affiliate.com product search on `/api/insight`
 

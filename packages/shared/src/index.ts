@@ -4,6 +4,7 @@ export {
 } from './product-payload'
 
 export {
+  affiliateMatchSchema,
   citationSchema,
   insightBulletSchema,
   insightCardSchema,
@@ -12,6 +13,7 @@ export {
   insightRequestSchema,
   insightResponseSchema,
   pricingRowSchema,
+  type AffiliateMatch,
   type InsightErrorBody,
   type InsightFlags,
   type InsightRequest,

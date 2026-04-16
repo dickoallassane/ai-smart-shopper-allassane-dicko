@@ -8,6 +8,7 @@ import manifest from './manifest.config'
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  envDir: rootDir,
   plugins: [react(), crx({ manifest })],
   resolve: {
     alias: {
