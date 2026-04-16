@@ -1,0 +1,280 @@
+/**
+ * ShopFriend extension design system — Stitch "ShopFriend: Smart Shopping Companion"
+ *
+ * Semantic map (Tailwind `--color-sf-*`):
+ * - sf-surface / sf-on-surface — app canvas + main text
+ * - sf-surface-header — slightly lighter strip (popup header)
+ * - sf-surface-card — slightly pinker tiles (no shadow)
+ * - sf-primary (+ container, on-*) — brand pink CTAs + fills
+ * - sf-primary-dark / sf-primary-light — chat user bubble + pressed tones
+ * - sf-secondary (+ on-*) — purple accent
+ * - sf-secondary-dark / sf-secondary-light — emphasis variants
+ * - sf-tertiary (+ container, on-*) — yellow CTA (Start Now)
+ * - sf-tertiary-dark / sf-tertiary-light — CTA hover / border
+ * - sf-neutral / sf-neutral-dark / sf-neutral-light — muted chrome
+ * - sf-chat-user / sf-chat-assistant — discussion bubbles
+ * - sf-outline, sf-error — borders + errors
+ *
+ * Components: `.sf-btn-*`, `.sf-surface-*`, `.sf-text-*`, `.sf-chat-*`
+ */
+@import "tailwindcss";
+
+@source "../**/*.{ts,tsx,html}";
+
+@theme {
+  --color-sf-surface: #fff4f8;
+  --color-sf-on-surface: #46223e;
+  --color-sf-on-surface-variant: #784e6c;
+  --color-sf-surface-header: #fff8fc;
+  --color-sf-surface-card: #ffe8f2;
+
+  --color-sf-primary: #a8216e;
+  --color-sf-primary-container: #ff6cb5;
+  --color-sf-on-primary: #ffeff3;
+  --color-sf-primary-dark: #4a0d35;
+  --color-sf-primary-light: #e85ba3;
+
+  --color-sf-secondary: #9a2698;
+  --color-sf-on-secondary: #ffeef8;
+  --color-sf-secondary-container: #ffbdf4;
+  --color-sf-secondary-dark: #5c0f5a;
+  --color-sf-secondary-light: #c94fc7;
+
+  --color-sf-tertiary: #815100;
+  --color-sf-tertiary-container: #ffab00;
+  --color-sf-on-tertiary: #311c00;
+  --color-sf-tertiary-dark: #5a3a00;
+  --color-sf-tertiary-light: #ffc94d;
+
+  --color-sf-neutral: #966988;
+  --color-sf-neutral-dark: #6b4a62;
+  --color-sf-neutral-light: #c9a9bf;
+
+  --color-sf-surface-container: #ffdff2;
+  --color-sf-surface-container-low: #ffecf5;
+  --color-sf-surface-container-high: #ffd7f0;
+  --color-sf-surface-container-highest: #ffcfee;
+  --color-sf-surface-container-lowest: #ffffff;
+
+  --color-sf-chat-user: #4a0d35;
+  --color-sf-on-chat-user: #fff5f9;
+  --color-sf-chat-assistant: #ffffff;
+  --color-sf-on-chat-assistant: #46223e;
+
+  --color-sf-outline: #966988;
+  --color-sf-error: #b41340;
+
+  --font-sf-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sf-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-sf-float: 0 20px 40px rgba(70, 34, 62, 0.08);
+  --shadow-sf-soft: 0 8px 24px rgba(70, 34, 62, 0.05);
+  --shadow-sf-cta: 0 6px 18px rgba(129, 81, 0, 0.2);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    margin: 0;
+    min-height: 100%;
+    background-color: var(--color-sf-surface);
+    color: var(--color-sf-on-surface);
+    font-family: var(--font-sf-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /**
+   * Popup only (see src/popup/index.html): fill the host window with the same pink,
+   * clip to rounded corners, and inset content so the OS square chrome is not visible
+   * as a contrasting frame. Extension popups cannot remove the native window border;
+   * matching the canvas to our surface color hides it.
+   */
+  html.sf-popup-html {
+    color-scheme: light;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background-color: var(--color-sf-surface);
+    border-radius: 1.75rem;
+    overflow: hidden;
+  }
+
+  html.sf-popup-html body {
+    margin: 0;
+    padding: 80px 80px 24px 24px;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    background-color: var(--color-sf-surface);
+  }
+
+  html.sf-popup-html #root {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    background-color: transparent;
+  }
+}
+
+@layer components {
+  .sf-font-display {
+    font-family: var(--font-sf-display);
+  }
+
+  .sf-surface-app {
+    background-color: var(--color-sf-surface);
+    color: var(--color-sf-on-surface);
+  }
+
+  .sf-surface-header {
+    background-color: var(--color-sf-surface-header);
+    color: var(--color-sf-on-surface);
+  }
+
+  .sf-surface-card-subtle {
+    background-color: var(--color-sf-surface-card);
+    color: var(--color-sf-on-surface);
+  }
+
+  .sf-text-title {
+    font-family: var(--font-sf-display);
+    color: var(--color-sf-secondary-dark);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .sf-text-body {
+    color: var(--color-sf-on-surface-variant);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .sf-text-muted {
+    color: var(--color-sf-neutral-dark);
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .sf-btn-primary {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border-0 px-4 py-2.5 text-sm font-semibold transition-[opacity,transform,box-shadow] duration-200 ease-out;
+    background: linear-gradient(90deg, var(--color-sf-primary), var(--color-sf-primary-container));
+    color: var(--color-sf-on-primary);
+    box-shadow: var(--shadow-sf-soft);
+  }
+
+  .sf-btn-primary:hover:not(:disabled) {
+    opacity: 0.95;
+  }
+
+  .sf-btn-primary:active:not(:disabled) {
+    transform: scale(0.99);
+  }
+
+  .sf-btn-primary:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .sf-btn-primary:focus-visible {
+    @apply outline outline-2 outline-offset-2;
+    outline-color: var(--color-sf-secondary);
+  }
+
+  .sf-btn-secondary {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border-0 px-4 py-2.5 text-sm font-semibold transition-[opacity,transform,background-color] duration-200 ease-out;
+    background-color: var(--color-sf-surface-container-highest);
+    color: var(--color-sf-primary);
+  }
+
+  .sf-btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-sf-surface-container-high);
+  }
+
+  .sf-btn-secondary:focus-visible {
+    @apply outline outline-2 outline-offset-2;
+    outline-color: var(--color-sf-secondary);
+  }
+
+  .sf-btn-cta-yellow {
+    @apply inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-0 px-4 py-3 text-base font-bold transition-[opacity,transform,box-shadow] duration-200 ease-out;
+    background-color: var(--color-sf-tertiary-container);
+    color: var(--color-sf-on-tertiary);
+    box-shadow: var(--shadow-sf-cta);
+  }
+
+  .sf-btn-cta-yellow:hover:not(:disabled) {
+    filter: brightness(1.03);
+  }
+
+  .sf-btn-cta-yellow:active:not(:disabled) {
+    transform: scale(0.99);
+  }
+
+  .sf-btn-cta-yellow:focus-visible {
+    @apply outline outline-2 outline-offset-2;
+    outline-color: var(--color-sf-tertiary-dark);
+  }
+
+  .sf-btn-ghost-icon {
+    @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-2 text-sf-on-surface-variant transition-colors duration-200;
+  }
+
+  .sf-btn-ghost-icon:hover {
+    background-color: var(--color-sf-surface-container-low);
+    color: var(--color-sf-on-surface);
+  }
+
+  .sf-btn-ghost-icon:focus-visible {
+    @apply outline outline-2 outline-offset-2;
+    outline-color: var(--color-sf-secondary);
+  }
+
+  .sf-chat-user {
+    align-self: flex-end;
+    max-width: 90%;
+    border-radius: 1rem 1rem 0.25rem 1rem;
+    background-color: var(--color-sf-chat-user);
+    color: var(--color-sf-on-chat-user);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  .sf-chat-assistant {
+    align-self: flex-start;
+    max-width: 95%;
+    border-radius: 1rem 1rem 1rem 0.25rem;
+    background-color: var(--color-sf-chat-assistant);
+    color: var(--color-sf-on-chat-assistant);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    box-shadow: 0 1px 0 rgba(70, 34, 62, 0.06);
+  }
+
+  .sf-badge-secure {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-wide;
+    background-color: var(--color-sf-surface-container-lowest);
+    color: var(--color-sf-secondary-dark);
+    box-shadow: 0 1px 2px rgba(70, 34, 62, 0.06);
+  }
+
+  .sf-popup-shell {
+    @apply box-border overflow-hidden rounded-[1.75rem] shadow-[var(--shadow-sf-float)];
+    width: 100%;
+    max-width: 360px;
+    min-width: 0;
+    background-color: var(--color-sf-surface);
+    border: none;
+    outline: none;
+  }
+
+  .sf-popup-accent-line {
+    height: 3px;
+    background: linear-gradient(90deg, var(--color-sf-secondary), var(--color-sf-primary-container));
+  }
+}

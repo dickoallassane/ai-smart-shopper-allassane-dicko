@@ -1,37 +1,96 @@
-import { useQuery } from '@tanstack/react-query'
-import { type InsightResponse } from '@shopfriend/shared'
-import { useEffect, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { insightRequestSchema, type InsightRequest, type InsightResponse } from '@shopfriend/shared'
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
+import { formatInsightAsAssistantText } from '../lib/format-insight-response'
+import { requestInsight } from '../lib/request-insight'
 
-const fetchLatestInsight = async (): Promise<InsightResponse | null> => {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['lastInsight'], (result) => {
-      resolve((result.lastInsight as InsightResponse | undefined) ?? null)
-    })
-  })
+const DISPLAY_NAME_KEY = 'extensionDisplayName'
+/** Until auth writes a real name, default shown in the header */
+const DEFAULT_DISPLAY_NAME = 'Guest'
+
+type ChatRole = 'user' | 'assistant'
+
+type ChatMessage = {
+  id: string
+  role: ChatRole
+  text: string
+}
+
+const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+
+const appendOnceForInsight = (
+  seen: Set<string>,
+  insight: InsightResponse,
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>
+) => {
+  if (seen.has(insight.requestId)) {
+    return
+  }
+  seen.add(insight.requestId)
+  setMessages((prev) => [
+    ...prev,
+    { id: createId(), role: 'assistant', text: formatInsightAsAssistantText(insight) }
+  ])
 }
 
 export const SidePanelApp = () => {
   const [hydrated, setHydrated] = useState(false)
+  const [displayName, setDisplayName] = useState(DEFAULT_DISPLAY_NAME)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [requestPayload, setRequestPayload] = useState<InsightRequest | null>(null)
+  const seenInsightIdsRef = useRef(new Set<string>())
 
   useEffect(() => {
     setHydrated(true)
   }, [])
 
-  const insightQuery = useQuery({
-    queryKey: ['latest-insight'],
-    queryFn: fetchLatestInsight,
-    enabled: hydrated
-  })
+  useEffect(() => {
+    if (!hydrated) {
+      return
+    }
+    chrome.storage.local.get([DISPLAY_NAME_KEY], (result) => {
+      const name = result[DISPLAY_NAME_KEY]
+      if (typeof name === 'string' && name.trim().length > 0) {
+        setDisplayName(name.trim())
+      }
+    })
+  }, [hydrated])
 
   useEffect(() => {
+    if (!hydrated) {
+      return
+    }
+    const loadSession = async () => {
+      const session = (await chrome.storage.session.get('lastProductPayload')) ?? {}
+      const raw = session.lastProductPayload
+      if (!raw) {
+        setRequestPayload(null)
+        return
+      }
+      const parsed = insightRequestSchema.safeParse({
+        product: raw,
+        flags: { llmEnabled: true, pricingBetaEnabled: false }
+      })
+      setRequestPayload(parsed.success ? parsed.data : null)
+    }
+    void loadSession()
+  }, [hydrated])
+
+  const appendInsightToThread = useCallback((insight: InsightResponse) => {
+    appendOnceForInsight(seenInsightIdsRef.current, insight, setMessages)
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) {
+      return
+    }
     const listener = (
       message: { type?: string; insight?: InsightResponse },
       _sender: chrome.runtime.MessageSender,
       sendResponse: (value?: unknown) => void
     ) => {
       if (message.type === 'INSIGHT_READY' && message.insight) {
-        void chrome.storage.local.set({ lastInsight: message.insight })
-        void insightQuery.refetch()
+        appendInsightToThread(message.insight)
       }
       sendResponse()
       return true
@@ -40,51 +99,162 @@ export const SidePanelApp = () => {
     return () => {
       chrome.runtime.onMessage.removeListener(listener)
     }
-  }, [insightQuery])
+  }, [hydrated, appendInsightToThread])
+
+  const priceMutation = useMutation({
+    mutationFn: (payload: InsightRequest) => requestInsight(payload),
+    onSuccess: (insight) => {
+      appendInsightToThread(insight)
+    },
+    onError: (error: Error) => {
+      setMessages((prev) => [
+        ...prev,
+        { id: createId(), role: 'assistant', text: `Could not check price: ${error.message}` }
+      ])
+    }
+  })
+
+  const handleCheckPrice = () => {
+    if (!requestPayload) {
+      setMessages((prev) => [
+        ...prev,
+        { id: createId(), role: 'user', text: 'Check the prices for this product.' },
+        {
+          id: createId(),
+          role: 'assistant',
+          text: 'Open an Amazon product page in this tab first so ShopFriend can read the listing.'
+        }
+      ])
+      return
+    }
+    setMessages((prev) => [...prev, { id: createId(), role: 'user', text: 'Check the prices for this product.' }])
+    priceMutation.mutate(requestPayload)
+  }
+
+  const handleReviewInsightStub = () => {
+    setMessages((prev) => [
+      ...prev,
+      { id: createId(), role: 'user', text: 'Get review insight for this product.' },
+      {
+        id: createId(),
+        role: 'assistant',
+        text: 'Review-focused insights will run here in a future update. For now, use Check Price after opening a PDP.'
+      }
+    ])
+  }
+
+  const handleSettings = () => {
+    console.debug('[ShopFriend] Settings (stub until auth)')
+  }
+
+  const handleLogout = () => {
+    console.debug('[ShopFriend] Logout (stub until auth)')
+  }
 
   if (!hydrated) {
-    return <p>Loading…</p>
-  }
-
-  if (insightQuery.isLoading) {
-    return <p>Fetching last insight…</p>
-  }
-
-  const insight = insightQuery.data
-
-  if (!insight) {
     return (
-      <main style={{ fontFamily: 'system-ui', padding: 12 }}>
-        <h1 style={{ fontSize: 18 }}>ShopFriend</h1>
-        <p>No insight yet. Use the popup on an Amazon PDP to run an insight.</p>
-      </main>
+      <div className="flex min-h-screen items-center justify-center bg-sf-surface px-4 text-sm text-sf-on-surface-variant">
+        Loading…
+      </div>
     )
   }
 
   return (
-    <main style={{ fontFamily: 'system-ui', padding: 12, maxWidth: 520 }}>
-      <h1 style={{ fontSize: 18 }}>ShopFriend</h1>
-      <p style={{ color: '#4b5563', fontSize: 13 }}>Request {insight.requestId}</p>
-      {insight.cards.map((card) => (
-        <section key={card.id} style={{ marginBottom: 16 }}>
-          <h2 style={{ fontSize: 15 }}>{card.title}</h2>
-          <ul>
-            {card.bullets.map((bullet, idx) => (
-              <li key={`${card.id}-${idx}`} style={{ marginBottom: 6 }}>
-                {bullet.text}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-      <section>
-        <h2 style={{ fontSize: 15 }}>Limitations</h2>
-        <ul>
-          {insight.limitations.map((line, idx) => (
-            <li key={`lim-${idx}`}>{line}</li>
-          ))}
-        </ul>
-      </section>
-    </main>
+    <div className="flex h-screen min-h-0 flex-col bg-sf-surface text-sf-on-surface">
+      <header className="sf-surface-header shrink-0 border-b border-sf-outline/10 px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sf-primary-dark text-sm font-bold text-sf-on-chat-user"
+              aria-hidden="true"
+            >
+              SF
+            </div>
+            <div className="min-w-0">
+              <p className="sf-font-display truncate text-base font-bold text-sf-secondary-dark">{displayName}</p>
+              <p className="sf-text-muted">Discussion</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              className="sf-btn-secondary px-3 py-1.5 text-xs"
+              onClick={handleSettings}
+              aria-label="Open settings (coming soon)"
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="sf-btn-secondary px-3 py-1.5 text-xs"
+              onClick={handleLogout}
+              aria-label="Log out (coming soon)"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div className="mx-auto flex max-w-xl flex-col gap-2">
+          <p className="sf-text-muted px-1">Thread</p>
+          <div
+            className="flex min-h-[120px] flex-col gap-2 rounded-2xl bg-sf-surface-container-low/80 p-3"
+            role="log"
+            aria-relevant="additions"
+            aria-live="polite"
+          >
+            {messages.length === 0 ? (
+              <p className="sf-text-muted px-1 py-2 text-center">No messages yet — try Check Price on a product tab.</p>
+            ) : (
+              messages.map((m) =>
+                m.role === 'user' ? (
+                  <div key={m.id} className="sf-chat-user">
+                    {m.text}
+                  </div>
+                ) : (
+                  <div key={m.id} className="sf-chat-assistant">
+                    {m.text}
+                  </div>
+                )
+              )
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="shrink-0 space-y-2 border-t border-sf-outline/10 bg-sf-surface-container-low/60 px-4 py-3">
+        <div className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            className="sf-btn-primary flex-1"
+            onClick={handleCheckPrice}
+            disabled={priceMutation.isPending}
+            aria-busy={priceMutation.isPending}
+          >
+            {priceMutation.isPending ? 'Checking price…' : 'Check Price'}
+          </button>
+          <button type="button" className="sf-btn-secondary flex-1" onClick={handleReviewInsightStub}>
+            Get Review Insight
+          </button>
+        </div>
+      </div>
+
+      <footer className="shrink-0 border-t border-sf-outline/15 bg-sf-surface-container-low px-4 py-3 opacity-75">
+        <p className="sf-text-muted mb-2 text-center">Chat is disabled in this build.</p>
+        <label htmlFor="sf-chat-disabled" className="sr-only">
+          Message (disabled)
+        </label>
+        <textarea
+          id="sf-chat-disabled"
+          rows={2}
+          disabled
+          placeholder="Type a message…"
+          className="w-full resize-none rounded-2xl border border-sf-outline/20 bg-sf-surface-container-highest px-3 py-2 text-sm text-sf-on-surface placeholder:text-sf-on-surface-variant/60"
+          aria-disabled="true"
+        />
+      </footer>
+    </div>
   )
 }
