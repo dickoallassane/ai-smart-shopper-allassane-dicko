@@ -81,8 +81,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === 'PRODUCT_PAYLOAD') {
+    const product = message.payload
+    console.debug('[ShopFriend] PRODUCT_PAYLOAD received', product)
     void chrome.storage.session.set({
-      lastProductPayload: message.payload
+      lastProductPayload: product
     })
   }
 

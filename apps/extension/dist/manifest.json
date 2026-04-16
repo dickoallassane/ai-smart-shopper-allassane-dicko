@@ -27,7 +27,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content-script.ts-loader-DPfqjjt8.js"
+        "assets/content-script.ts-loader-CXP9xZV5.js"
       ],
       "matches": [
         "https://www.amazon.com/*"
@@ -42,7 +42,7 @@
       ],
       "resources": [
         "assets/insight-contract-BHP7Jkrz.js",
-        "assets/content-script.ts-BpVOTp3m.js"
+        "assets/content-script.ts-CT9BCVkU.js"
       ],
       "use_dynamic_url": false
     }

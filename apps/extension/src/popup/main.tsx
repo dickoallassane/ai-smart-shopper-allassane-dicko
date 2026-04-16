@@ -1,3 +1,4 @@
+import '../styles/extension-ui.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
