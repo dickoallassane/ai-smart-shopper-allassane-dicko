@@ -52,6 +52,9 @@ const isSupabaseConfigured = () =>
 const insightAuthRequired = () =>
   process.env.SHOPFRIEND_REQUIRE_INSIGHT_AUTH === "true" && isSupabaseConfigured()
 
+/** Bright Data Discover polling can exceed default serverless limits on Vercel. */
+export const maxDuration = 120
+
 export const POST = async (request: NextRequest) => {
   const requestId = crypto.randomUUID()
   const controller = new AbortController()

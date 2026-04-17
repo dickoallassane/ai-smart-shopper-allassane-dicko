@@ -1,11 +1,19 @@
 import { z } from 'zod'
 import { productPayloadSchema } from './product-payload'
 
+export const insightKindSchema = z.enum(['price_check', 'review_discovery'])
+
+export type InsightKind = z.infer<typeof insightKindSchema>
+
 export const insightFlagsSchema = z.object({
   llmEnabled: z.boolean(),
   pricingBetaEnabled: z.boolean(),
   /** When true, server skips affiliate product search (e.g. service sites). */
-  skipAffiliate: z.boolean().default(false)
+  skipAffiliate: z.boolean().default(false),
+  /** `review_discovery` runs Bright Data Discover instead of price-check pipeline. */
+  insightKind: insightKindSchema.default('price_check'),
+  /** Mirrors extension site config `isService` for prompt shaping on the server. */
+  isServiceSite: z.boolean().default(false)
 })
 
 export type InsightFlags = z.infer<typeof insightFlagsSchema>
@@ -60,12 +68,32 @@ export const affiliateMatchSchema = z.object({
 
 export type AffiliateMatch = z.infer<typeof affiliateMatchSchema>
 
+export const reviewDiscoveryResultSchema = z.object({
+  link: z.string().url(),
+  title: z.string().max(500),
+  description: z.string().max(2000).optional(),
+  relevanceScore: z.number().optional(),
+  /** Markdown page excerpt when Discover was called with include_content */
+  content: z.string().max(8000).optional()
+})
+
+export type ReviewDiscoveryResult = z.infer<typeof reviewDiscoveryResultSchema>
+
+export const reviewDiscoverySchema = z.object({
+  query: z.string().max(500),
+  intent: z.string().max(4000).optional(),
+  results: z.array(reviewDiscoveryResultSchema).max(10)
+})
+
+export type ReviewDiscovery = z.infer<typeof reviewDiscoverySchema>
+
 export const insightResponseSchema = z.object({
   version: z.literal('1'),
   requestId: z.string().uuid(),
   cards: z.array(insightCardSchema),
   pricingRows: z.array(pricingRowSchema).max(20).optional(),
   affiliateMatches: z.array(affiliateMatchSchema).max(15).optional(),
+  reviewDiscovery: reviewDiscoverySchema.optional(),
   limitations: z.array(z.string().max(500)).max(32),
   generatedAt: z.string().datetime({ offset: true })
 })

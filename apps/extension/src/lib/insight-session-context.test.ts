@@ -89,6 +89,7 @@ describe('loadInsightSessionContext', () => {
     const ctx = await loadInsightSessionContext()
     expect(ctx.isServiceSite).toBe(true)
     expect(ctx.insightRequest?.flags.skipAffiliate).toBe(true)
+    expect(ctx.insightRequest?.flags.isServiceSite).toBe(true)
     expect(ctx.insightRequest?.product.retailer).toBe('madmuscles')
   })
 
@@ -105,5 +106,6 @@ describe('loadInsightSessionContext', () => {
     const ctx = await loadInsightSessionContext()
     expect(ctx.isServiceSite).toBe(false)
     expect(ctx.insightRequest?.flags.skipAffiliate).toBe(false)
+    expect(ctx.insightRequest?.flags.isServiceSite).toBe(false)
   })
 })

@@ -22,7 +22,13 @@ export const PopupApp = () => {
       }
       const parsed = insightRequestSchema.safeParse({
         product: raw,
-        flags: { llmEnabled: true, pricingBetaEnabled: false }
+        flags: {
+          llmEnabled: true,
+          pricingBetaEnabled: false,
+          skipAffiliate: false,
+          insightKind: 'price_check',
+          isServiceSite: false
+        }
       })
       if (!parsed.success) {
         setPdpHint('invalid')

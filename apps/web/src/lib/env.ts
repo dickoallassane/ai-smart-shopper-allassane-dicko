@@ -12,6 +12,7 @@ const serverEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().url().optional(),
+  /** Bearer for Bright Data APIs; also accepts `BRIGHT_DATA_API_KEY` as an alias. */
   BRIGHT_DATA_API_TOKEN: z.string().optional(),
   /** Bearer token for Affiliate.com Product API (server-only) */
   AFFILIATE_NETWORKS_API_KEY: z.string().min(1).optional(),
@@ -30,7 +31,8 @@ export const getServerEnv = (): ServerEnv => {
     SUPABASE_SERVICE_ROLE_KEY: pickEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
     OPENAI_API_KEY: pickEnv(process.env.OPENAI_API_KEY),
     OPENAI_BASE_URL: pickEnv(process.env.OPENAI_BASE_URL),
-    BRIGHT_DATA_API_TOKEN: pickEnv(process.env.BRIGHT_DATA_API_TOKEN),
+    BRIGHT_DATA_API_TOKEN:
+      pickEnv(process.env.BRIGHT_DATA_API_TOKEN) ?? pickEnv(process.env.BRIGHT_DATA_API_KEY),
     AFFILIATE_NETWORKS_API_KEY: pickEnv(process.env.AFFILIATE_NETWORKS_API_KEY),
     AFFILIATE_NETWORKS_API_BASE_URL: pickEnv(process.env.AFFILIATE_NETWORKS_API_BASE_URL),
     AFFILIATE_NETWORKS_REQUEST_JSON: pickEnv(process.env.AFFILIATE_NETWORKS_REQUEST_JSON)

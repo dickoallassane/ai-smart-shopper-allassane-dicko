@@ -40,6 +40,33 @@ const mockInsightNoAffiliate: InsightResponse = {
   generatedAt: "2026-04-15T12:00:00.000Z"
 }
 
+const mockInsightReviewDiscovery: InsightResponse = {
+  version: "1",
+  requestId: "d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44",
+  cards: [
+    {
+      id: "review-discovery-disclaimer",
+      kind: "reputation",
+      title: "Web research (Bright Data Discover)",
+      bullets: [{ text: "Third-party web results — not verified facts." }]
+    }
+  ],
+  reviewDiscovery: {
+    query: '"Example product" reviews pros cons www.amazon.com',
+    intent: "Prioritize Trustpilot, Reddit, YouTube.",
+    results: [
+      {
+        link: "https://www.reddit.com/r/example/comments/abc",
+        title: "Reddit thread about product",
+        description: "Mixed reviews here.",
+        relevanceScore: 0.88
+      }
+    ]
+  },
+  limitations: ["Third-party opinions from the open web only — not financial, legal, or medical advice."],
+  generatedAt: "2026-04-15T12:00:00.000Z"
+}
+
 const mockInsightWithAffiliate: InsightResponse = {
   version: "1",
   requestId: "c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33",
@@ -195,16 +222,34 @@ describe("SidePanelApp", () => {
     })
   })
 
-  it("appends stub assistant reply when Get Review Insight is clicked", async () => {
+  it("requests review discovery and shows source links when Get Review Insight succeeds", async () => {
     const user = userEvent.setup()
+    sessionValues = {
+      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
+      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "55": validProduct }
+    }
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string; payload?: { flags?: { insightKind?: string } } }, cb?: (r: unknown) => void) => {
+        expect(msg.type).toBe("REQUEST_INSIGHT")
+        expect(msg.payload?.flags?.insightKind).toBe("review_discovery")
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
     renderSidePanel()
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
     })
     await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
     await waitFor(() => {
-      expect(screen.getByText(/Review-focused insights will run here/i)).toBeInTheDocument()
+      expect(screen.getByRole("link", { name: /Reddit thread about product/i })).toHaveAttribute(
+        "href",
+        "https://www.reddit.com/r/example/comments/abc"
+      )
     })
+    expect(screen.getByText(/ranked web sources/i)).toBeInTheDocument()
   })
 
   it("requests insight and shows price-check user copy when Check Price is clicked with valid session", async () => {
@@ -416,7 +461,7 @@ describe("SidePanelApp", () => {
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     renderSidePanel()
     await waitFor(() => {
-      expect(screen.getByText(/Get Review Insight on this service page/i)).toBeInTheDocument()
+      expect(screen.getByText(/Get Review Insight for web research on this service page/i)).toBeInTheDocument()
     })
   })
 })

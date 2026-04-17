@@ -1,4 +1,4 @@
-import { insightResponseSchema, type InsightRequest } from "@shopfriend/shared"
+import { insightRequestSchema, insightResponseSchema, type InsightRequest } from "@shopfriend/shared"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as affiliate from "../affiliate/searchAffiliateProducts"
 import { generateInsight } from "./generate"
@@ -12,15 +12,16 @@ const baseProduct = {
   extractedAt: "2026-04-15T12:00:00.000Z"
 }
 
-const request = (overrides: Partial<InsightRequest> = {}): InsightRequest => ({
-  product: { ...baseProduct, ...overrides.product },
-  flags: {
-    llmEnabled: true,
-    pricingBetaEnabled: false,
-    skipAffiliate: false,
-    ...overrides.flags
-  }
-})
+const request = (overrides: Partial<InsightRequest> = {}): InsightRequest =>
+  insightRequestSchema.parse({
+    product: { ...baseProduct, ...overrides.product },
+    flags: {
+      llmEnabled: true,
+      pricingBetaEnabled: false,
+      skipAffiliate: false,
+      ...overrides.flags
+    }
+  })
 
 describe("generateInsight", () => {
   beforeEach(() => {
@@ -43,7 +44,15 @@ describe("generateInsight", () => {
   it("returns LLM-off stub when llmEnabled is false", async () => {
     const ac = new AbortController()
     const promise = generateInsight(
-      request({ flags: { llmEnabled: false, pricingBetaEnabled: false, skipAffiliate: false } }),
+      request({
+        flags: {
+          llmEnabled: false,
+          pricingBetaEnabled: false,
+          skipAffiliate: false,
+          insightKind: "price_check",
+          isServiceSite: false
+        }
+      }),
       ac.signal
     )
     await vi.advanceTimersByTimeAsync(50)
@@ -75,7 +84,13 @@ describe("generateInsight", () => {
     const ac = new AbortController()
     const promise = generateInsight(
       request({
-        flags: { llmEnabled: false, pricingBetaEnabled: true, skipAffiliate: false }
+        flags: {
+          llmEnabled: false,
+          pricingBetaEnabled: true,
+          skipAffiliate: false,
+          insightKind: "price_check",
+          isServiceSite: false
+        }
       }),
       ac.signal
     )
@@ -148,7 +163,15 @@ describe("generateInsight", () => {
       })
       const ac = new AbortController()
       const promise = generateInsight(
-        request({ flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate: true } }),
+        request({
+          flags: {
+            llmEnabled: true,
+            pricingBetaEnabled: false,
+            skipAffiliate: true,
+            insightKind: "price_check",
+            isServiceSite: false
+          }
+        }),
         ac.signal
       )
       await vi.advanceTimersByTimeAsync(200)
@@ -158,5 +181,113 @@ describe("generateInsight", () => {
       expect(result.limitations.some((l) => l.includes("Affiliate search skipped"))).toBe(true)
       spy.mockRestore()
     })
+  })
+})
+
+describe("generateInsight review discovery (Bright Data)", () => {
+  const prevBright = process.env.BRIGHT_DATA_API_TOKEN
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    if (prevBright === undefined) {
+      delete process.env.BRIGHT_DATA_API_TOKEN
+    } else {
+      process.env.BRIGHT_DATA_API_TOKEN = prevBright
+    }
+  })
+
+  it("returns reviewDiscovery with ranked results when Discover succeeds", async () => {
+    process.env.BRIGHT_DATA_API_TOKEN = "test-bright-token"
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      link: `https://example.com/review-${i}`,
+      title: `Result ${i}`,
+      description: `Snippet ${i}`,
+      relevance_score: 0.9 - i * 0.01
+    }))
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({ status: "ok", task_id: "task-abc" })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({ status: "done", results: rows })
+        })
+    )
+
+    const ac = new AbortController()
+    const result = await generateInsight(
+      request({
+        flags: {
+          llmEnabled: false,
+          pricingBetaEnabled: false,
+          skipAffiliate: true,
+          insightKind: "review_discovery",
+          isServiceSite: false
+        }
+      }),
+      ac.signal
+    )
+
+    expect(result.reviewDiscovery?.results).toHaveLength(10)
+    expect(result.reviewDiscovery?.results?.[0]?.title).toBe("Result 0")
+    expect(result.cards.some((c) => c.id === "review-discovery-disclaimer")).toBe(true)
+    expect(globalThis.fetch).toHaveBeenCalled()
+    const postInit = globalThis.fetch.mock.calls[0][1] as { body?: string }
+    const posted = JSON.parse(postInit.body ?? "{}") as Record<string, unknown>
+    expect(posted.query).toBeDefined()
+    expect(posted.intent).toBeDefined()
+    expect(posted.dedupe).toBeUndefined()
+    expect(posted.include_content).toBeUndefined()
+  })
+
+  it("does not call affiliate search for review_discovery", async () => {
+    process.env.BRIGHT_DATA_API_TOKEN = "test-bright-token"
+    const spy = vi.spyOn(affiliate, "searchAffiliateProducts").mockResolvedValue({
+      matches: [{ offerId: "x" } as never]
+    })
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify({ status: "ok", task_id: "t1" })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              status: "done",
+              results: [
+                {
+                  link: "https://www.trustpilot.com/review/example",
+                  title: "Trustpilot page",
+                  relevance_score: 0.91
+                }
+              ]
+            })
+        })
+    )
+
+    const ac = new AbortController()
+    await generateInsight(
+      request({
+        flags: {
+          llmEnabled: false,
+          pricingBetaEnabled: false,
+          skipAffiliate: false,
+          insightKind: "review_discovery",
+          isServiceSite: false
+        }
+      }),
+      ac.signal
+    )
+
+    expect(spy).toHaveBeenCalledTimes(0)
+    spy.mockRestore()
   })
 })

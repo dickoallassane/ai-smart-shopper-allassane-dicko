@@ -1,18 +1,19 @@
-import type { InsightRequest } from "@shopfriend/shared"
+import { insightRequestSchema, type InsightRequest } from "@shopfriend/shared"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { searchAffiliateProducts } from "./searchAffiliateProducts"
 
-const amazonRequest = (): InsightRequest => ({
-  product: {
-    retailer: "amazon",
-    locale: "en-US",
-    url: "https://www.amazon.com/dp/B09MQLP33J",
-    title: "HDMI cable pack",
-    reviewExcerpts: [],
-    extractedAt: "2026-04-17T12:00:00.000Z"
-  },
-  flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate: false }
-})
+const amazonRequest = (): InsightRequest =>
+  insightRequestSchema.parse({
+    product: {
+      retailer: "amazon",
+      locale: "en-US",
+      url: "https://www.amazon.com/dp/B09MQLP33J",
+      title: "HDMI cable pack",
+      reviewExcerpts: [],
+      extractedAt: "2026-04-17T12:00:00.000Z"
+    },
+    flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate: false }
+  })
 
 describe("searchAffiliateProducts same-retailer filter", () => {
   const prevKey = process.env.AFFILIATE_NETWORKS_API_KEY

@@ -36,7 +36,13 @@ export const loadInsightSessionContext = async (): Promise<InsightSessionContext
   }
   const parsed = insightRequestSchema.safeParse({
     product: raw,
-    flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate }
+    flags: {
+      llmEnabled: true,
+      pricingBetaEnabled: false,
+      skipAffiliate,
+      isServiceSite,
+      insightKind: 'price_check'
+    }
   })
   return {
     insightRequest: parsed.success ? parsed.data : null,

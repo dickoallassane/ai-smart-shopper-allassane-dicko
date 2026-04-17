@@ -1,5 +1,10 @@
 import { useMutation } from '@tanstack/react-query'
-import { type AffiliateMatch, type InsightRequest, type InsightResponse } from '@shopfriend/shared'
+import {
+  type AffiliateMatch,
+  type InsightRequest,
+  type InsightResponse,
+  type ReviewDiscoveryResult
+} from '@shopfriend/shared'
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 import { loadInsightSessionContext } from '../lib/insight-session-context'
 import { requestInsight } from '../lib/request-insight'
@@ -11,11 +16,19 @@ const DEFAULT_DISPLAY_NAME = 'Guest'
 
 const PRICE_MATCH_INTRO = 'Here are few matches I found'
 const NO_AFFILIATE_PRODUCTS = 'No product is found'
+const REVIEW_INSIGHT_TIMEOUT_MS = 82_000
 
 type ChatMessage =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'assistant'; kind: 'text'; text: string }
   | { id: string; role: 'assistant'; kind: 'price_matches'; intro: string; matches: AffiliateMatch[] }
+  | {
+      id: string
+      role: 'assistant'
+      kind: 'review_discovery'
+      intro: string
+      results: ReviewDiscoveryResult[]
+    }
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
@@ -25,7 +38,29 @@ const buildCheckPriceUserText = (payload: InsightRequest): string => {
   return `Look for the best prices for this product: ${title} - costing less than ${pricePhrase}`
 }
 
-const buildPriceCheckAssistantMessage = (insight: InsightResponse): ChatMessage => {
+const isReviewDiscoveryResponse = (insight: InsightResponse): boolean =>
+  insight.cards.some((c) => c.id === 'review-discovery-disclaimer')
+
+const buildAssistantMessageFromInsight = (insight: InsightResponse): ChatMessage => {
+  if (isReviewDiscoveryResponse(insight)) {
+    const rows = insight.reviewDiscovery?.results ?? []
+    if (rows.length > 0) {
+      return {
+        id: createId(),
+        role: 'assistant',
+        kind: 'review_discovery',
+        intro: `Here are ${rows.length} ranked web sources (Bright Data Discover).`,
+        results: rows
+      }
+    }
+    return {
+      id: createId(),
+      role: 'assistant',
+      kind: 'text',
+      text: insight.limitations.join('\n\n')
+    }
+  }
+
   if (insight.affiliateMatches && insight.affiliateMatches.length > 0) {
     return {
       id: createId(),
@@ -52,7 +87,7 @@ const appendOnceForInsight = (
     return
   }
   seen.add(insight.requestId)
-  setMessages((prev) => [...prev, buildPriceCheckAssistantMessage(insight)])
+  setMessages((prev) => [...prev, buildAssistantMessageFromInsight(insight)])
 }
 
 const AffiliateMatchCard = ({ match }: { match: AffiliateMatch }) => {
@@ -174,6 +209,24 @@ export const SidePanelApp = () => {
     }
   })
 
+  const reviewMutation = useMutation({
+    mutationFn: (payload: InsightRequest) => requestInsight(payload, REVIEW_INSIGHT_TIMEOUT_MS),
+    onSuccess: (insight) => {
+      appendInsightToThread(insight)
+    },
+    onError: (error: Error) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: createId(),
+          role: 'assistant',
+          kind: 'text',
+          text: `Could not get review insight: ${error.message}`
+        }
+      ])
+    }
+  })
+
   const handleCheckPrice = async () => {
     const ctx = await loadInsightSessionContext()
     setRequestPayload(ctx.insightRequest)
@@ -198,17 +251,44 @@ export const SidePanelApp = () => {
     priceMutation.mutate(freshPayload)
   }
 
-  const handleReviewInsightStub = () => {
+  const handleReviewInsight = async () => {
+    const ctx = await loadInsightSessionContext()
+    setRequestPayload(ctx.insightRequest)
+    setInsightSourceIsService(ctx.isServiceSite)
+    const freshPayload = ctx.insightRequest
+
+    if (!freshPayload) {
+      setMessages((prev) => [
+        ...prev,
+        { id: createId(), role: 'user', text: 'Get review insight for this page.' },
+        {
+          id: createId(),
+          role: 'assistant',
+          kind: 'text',
+          text: 'Open a supported product or service page in this tab first so ShopFriend can read the context.'
+        }
+      ])
+      return
+    }
+
+    const payload: InsightRequest = {
+      ...freshPayload,
+      flags: {
+        ...freshPayload.flags,
+        insightKind: 'review_discovery',
+        isServiceSite: ctx.isServiceSite
+      }
+    }
+
     setMessages((prev) => [
       ...prev,
-      { id: createId(), role: 'user', text: 'Get review insight for this product.' },
       {
         id: createId(),
-        role: 'assistant',
-        kind: 'text',
-        text: 'Review-focused insights will run here in a future update. For now, use Check Price after opening a PDP.'
+        role: 'user',
+        text: 'Get review insight from the web (Trustpilot, Reddit, YouTube, forums, etc.).'
       }
     ])
+    reviewMutation.mutate(payload)
   }
 
   const handleSettings = () => {
@@ -280,8 +360,8 @@ export const SidePanelApp = () => {
                 {messages.length === 0 ? (
                   <p className="sf-text-muted px-1 py-2 text-center">
                     {insightSourceIsService
-                      ? 'No messages yet — use Get Review Insight on this service page (coming soon).'
-                      : 'No messages yet — try Check Price on a product tab.'}
+                      ? 'No messages yet — use Get Review Insight for web research on this service page.'
+                      : 'No messages yet — try Check Price or Get Review Insight on a product tab.'}
                   </p>
                 ) : (
                   messages.map((m) => {
@@ -296,6 +376,35 @@ export const SidePanelApp = () => {
                       return (
                         <div key={m.id} className="sf-chat-assistant">
                           {m.text}
+                        </div>
+                      )
+                    }
+                    if (m.kind === 'review_discovery') {
+                      return (
+                        <div key={m.id} className="sf-chat-assistant flex flex-col gap-3">
+                          <p className="m-0 text-sm leading-snug">{m.intro}</p>
+                          <ol className="m-0 flex list-decimal flex-col gap-3 pl-5 text-sm">
+                            {m.results.map((r) => (
+                              <li key={r.link} className="leading-snug">
+                                <a
+                                  href={r.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-semibold text-sf-primary underline-offset-2 hover:underline"
+                                >
+                                  {r.title}
+                                </a>
+                                {typeof r.relevanceScore === 'number' ? (
+                                  <span className="ml-2 text-xs text-sf-on-surface-variant">
+                                    relevance {r.relevanceScore.toFixed(2)}
+                                  </span>
+                                ) : null}
+                                {r.description ? (
+                                  <p className="mt-1 mb-0 text-sf-on-surface-variant">{r.description}</p>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ol>
                         </div>
                       )
                     }
@@ -322,7 +431,7 @@ export const SidePanelApp = () => {
                   type="button"
                   className="sf-btn-primary flex-1"
                   onClick={() => void handleCheckPrice()}
-                  disabled={priceMutation.isPending}
+                  disabled={priceMutation.isPending || reviewMutation.isPending}
                   aria-busy={priceMutation.isPending}
                 >
                   {priceMutation.isPending ? 'Checking price…' : 'Check Price'}
@@ -331,9 +440,11 @@ export const SidePanelApp = () => {
               <button
                 type="button"
                 className={insightSourceIsService ? 'sf-btn-primary flex-1' : 'sf-btn-secondary flex-1'}
-                onClick={handleReviewInsightStub}
+                onClick={() => void handleReviewInsight()}
+                disabled={reviewMutation.isPending || priceMutation.isPending}
+                aria-busy={reviewMutation.isPending}
               >
-                Get Review Insight
+                {reviewMutation.isPending ? 'Searching web…' : 'Get Review Insight'}
               </button>
             </div>
           </div>
