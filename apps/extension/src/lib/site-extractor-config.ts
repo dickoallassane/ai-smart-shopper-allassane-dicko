@@ -37,20 +37,36 @@ const siteSelectorsSchema = z.object({
   reviewSnippets: reviewSnippetsSelectorsSchema.optional()
 })
 
+const siteSelectorsOptionalSchema = siteSelectorsSchema.optional()
+
 const productIdFromUrlSchema = z.object({
   regex: z.string().min(1),
   flags: z.string().max(8).optional(),
   group: z.number().int().min(1).max(9).default(1)
 })
 
-export const siteExtractorSiteSchema = z.object({
-  id: z.string().min(1).max(64),
-  isService: z.boolean().default(false),
-  matchPatterns: z.array(z.string().min(1).max(512)).min(1),
-  pdpPathPatterns: z.array(pathPatternSchema).min(1),
-  productIdFromUrl: productIdFromUrlSchema.optional(),
-  selectors: siteSelectorsSchema
-})
+export const siteExtractorSiteSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    isService: z.boolean().default(false),
+    matchPatterns: z.array(z.string().min(1).max(512)).min(1),
+    pdpPathPatterns: z.array(pathPatternSchema).min(1),
+    productIdFromUrl: productIdFromUrlSchema.optional(),
+    /** Omitted for `isService` sites (payload uses page title only; no DOM scraping). */
+    selectors: siteSelectorsOptionalSchema
+  })
+  .superRefine((val, ctx) => {
+    if (!val.isService) {
+      const titlePrimary = val.selectors?.title?.primary?.trim()
+      if (!titlePrimary) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Retail sites require selectors.title.primary',
+          path: ['selectors', 'title']
+        })
+      }
+    }
+  })
 
 export type SiteExtractorSite = z.infer<typeof siteExtractorSiteSchema>
 
@@ -89,6 +105,12 @@ export const DEFAULT_SITE_EXTRACTOR_CONFIG: SiteExtractorConfigFile = {
           maxItems: 10
         }
       }
+    },
+    {
+      id: 'madmuscles',
+      isService: true,
+      matchPatterns: ['https://madmuscles.com/*', 'https://www.madmuscles.com/*'],
+      pdpPathPatterns: [{ name: 'any_page', regex: '.*', flags: '' }]
     }
   ]
 }

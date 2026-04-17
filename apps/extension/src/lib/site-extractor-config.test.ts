@@ -32,7 +32,7 @@ describe('siteExtractorConfigFileSchema', () => {
     expect(r.success).toBe(false)
   })
 
-  it('rejects site missing selectors.title', () => {
+  it('rejects retail site missing selectors.title', () => {
     const r = siteExtractorConfigFileSchema.safeParse({
       sites: [
         {
@@ -45,5 +45,19 @@ describe('siteExtractorConfigFileSchema', () => {
       ],
     })
     expect(r.success).toBe(false)
+  })
+
+  it('accepts service site without selectors', () => {
+    const r = siteExtractorConfigFileSchema.safeParse({
+      sites: [
+        {
+          id: 'svc',
+          isService: true,
+          matchPatterns: ['https://svc.example/*'],
+          pdpPathPatterns: [{ name: 'any', regex: '.*', flags: '' }],
+        },
+      ],
+    })
+    expect(r.success).toBe(true)
   })
 })

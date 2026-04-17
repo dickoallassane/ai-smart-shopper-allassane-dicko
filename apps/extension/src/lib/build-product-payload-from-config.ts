@@ -1,6 +1,11 @@
 import { productPayloadSchema, type ProductPayload } from '@shopfriend/shared'
 import type { SiteExtractorSite } from './site-extractor-config'
 
+/** Retail PDP config always includes DOM selectors (validated before extraction). */
+type RetailSiteWithSelectors = SiteExtractorSite & {
+  selectors: NonNullable<SiteExtractorSite['selectors']>
+}
+
 export type SiteLocation = Pick<Location, 'href' | 'pathname' | 'hostname'>
 
 const READ_TIMEOUT_MS = 8_000
@@ -111,7 +116,7 @@ const readOptionalField = async (
 const readTitle = async (
   document: Document,
   pageTitle: string,
-  site: SiteExtractorSite
+  site: RetailSiteWithSelectors
 ): Promise<string> => {
   const cfg = site.selectors.title
   const readOne = async (sel: string, wait: boolean) => {
@@ -144,7 +149,10 @@ const extractProductIdFromUrl = (pathname: string, site: SiteExtractorSite): str
   }
 }
 
-const extractReviewSnippets = async (document: Document, site: SiteExtractorSite): Promise<string[]> => {
+const extractReviewSnippets = async (
+  document: Document,
+  site: RetailSiteWithSelectors
+): Promise<string[]> => {
   const cfg = site.selectors.reviewSnippets
   if (!cfg) {
     return []
@@ -169,8 +177,27 @@ export const buildProductPayloadFromConfig = async (
   pageTitle: string,
   site: SiteExtractorSite
 ): Promise<ProductPayload> => {
-  const title = await readTitle(document, pageTitle, site)
   const extractedAt = new Date().toISOString()
+
+  if (site.isService) {
+    const title = pageTitle.trim() || document.title.trim() || 'Service'
+    return productPayloadSchema.parse({
+      retailer: site.id,
+      locale: 'en-US',
+      url: location.href,
+      title,
+      reviewExcerpts: [],
+      extractedAt
+    })
+  }
+
+  const selectors = site.selectors
+  if (!selectors) {
+    throw new Error(`[ShopFriend] Retail site "${site.id}" is missing selectors in config`)
+  }
+  const retailSite: RetailSiteWithSelectors = { ...site, selectors }
+
+  const title = await readTitle(document, pageTitle, retailSite)
   const asin = extractProductIdFromUrl(location.pathname, site)
 
   return productPayloadSchema.parse({
@@ -179,10 +206,10 @@ export const buildProductPayloadFromConfig = async (
     url: location.href,
     asin,
     title,
-    displayedPrice: await readOptionalField(document, site.selectors.displayedPrice),
-    ratingSummary: await readOptionalField(document, site.selectors.ratingSummary),
-    reviewExcerpts: await extractReviewSnippets(document, site),
-    sellerFulfillment: await readOptionalField(document, site.selectors.sellerFulfillment),
+    displayedPrice: await readOptionalField(document, selectors.displayedPrice),
+    ratingSummary: await readOptionalField(document, selectors.ratingSummary),
+    reviewExcerpts: await extractReviewSnippets(document, retailSite),
+    sellerFulfillment: await readOptionalField(document, selectors.sellerFulfillment),
     extractedAt
   })
 }

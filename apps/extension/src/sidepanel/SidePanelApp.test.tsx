@@ -289,7 +289,7 @@ describe("SidePanelApp", () => {
     await user.click(screen.getByRole("button", { name: /^Check Price$/i }))
     await waitFor(() => {
       expect(
-        screen.getByText(/Open an Amazon product page in this tab first/i)
+        screen.getByText(/Open a supported product or service page in this tab first/i)
       ).toBeInTheDocument()
     })
     expect(chromeMock.runtimeSendMessage).not.toHaveBeenCalled()
@@ -377,34 +377,46 @@ describe("SidePanelApp", () => {
     expect(chrome.permissions.request).toHaveBeenCalled()
   })
 
-  it("sends skipAffiliate true on Check Price when stored site marks retailer as service", async () => {
-    const user = userEvent.setup()
-    const cfg = structuredClone(DEFAULT_SITE_EXTRACTOR_CONFIG)
-    const amazon = cfg.sites.find((s) => s.id === "amazon")
-    expect(amazon).toBeDefined()
-    amazon!.isService = true
-    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(cfg)
+  it("hides Check Price when the insight source tab is a service site (madmuscles)", async () => {
     sessionValues = {
       [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "55": validProduct },
+      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
+        "55": {
+          retailer: "madmuscles",
+          locale: "en-US",
+          url: "https://www.madmuscles.com/",
+          title: "Coaching",
+          reviewExcerpts: [] as string[],
+          extractedAt: "2026-04-15T12:00:00.000Z",
+        },
+      },
     }
-    chromeMock.runtimeSendMessage.mockImplementation(
-      (msg: { type?: string; payload?: { flags?: { skipAffiliate?: boolean } } }, cb?: (r: unknown) => void) => {
-        if (msg.type === "REQUEST_INSIGHT" && typeof cb === "function") {
-          expect(msg.payload?.flags?.skipAffiliate).toBe(true)
-          cb({ ok: true, insight: mockInsightNoAffiliate })
-          return
-        }
-        return Promise.resolve()
-      }
-    )
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     renderSidePanel()
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^Check Price$/i })).toBeEnabled()
+      expect(screen.queryByRole("button", { name: /^Check Price$/i })).not.toBeInTheDocument()
     })
-    await user.click(screen.getByRole("button", { name: /^Check Price$/i }))
+    expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+  })
+
+  it("shows service empty-thread hint when tab is a service site", async () => {
+    sessionValues = {
+      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
+      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
+        "55": {
+          retailer: "madmuscles",
+          locale: "en-US",
+          url: "https://www.madmuscles.com/",
+          title: "Coaching",
+          reviewExcerpts: [] as string[],
+          extractedAt: "2026-04-15T12:00:00.000Z",
+        },
+      },
+    }
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    renderSidePanel()
     await waitFor(() => {
-      expect(screen.getByText("No product is found")).toBeInTheDocument()
+      expect(screen.getByText(/Get Review Insight on this service page/i)).toBeInTheDocument()
     })
   })
 })

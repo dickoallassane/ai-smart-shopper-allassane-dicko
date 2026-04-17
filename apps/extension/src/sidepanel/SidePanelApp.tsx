@@ -1,17 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
-import {
-  insightRequestSchema,
-  type AffiliateMatch,
-  type InsightRequest,
-  type InsightResponse
-} from '@shopfriend/shared'
+import { type AffiliateMatch, type InsightRequest, type InsightResponse } from '@shopfriend/shared'
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
-import { getStoredProductPayloadForTab, resolveInsightSourceTabId } from '../lib/pdp-session-storage'
-import {
-  defaultSiteExtractorConfigJson,
-  parseSiteExtractorConfigJson,
-  SITE_EXTRACTOR_CONFIG_JSON_KEY
-} from '../lib/site-extractor-config'
+import { loadInsightSessionContext } from '../lib/insight-session-context'
 import { requestInsight } from '../lib/request-insight'
 import { SettingsPanel } from './SettingsPanel'
 
@@ -51,34 +41,6 @@ const buildPriceCheckAssistantMessage = (insight: InsightResponse): ChatMessage 
     kind: 'text',
     text: NO_AFFILIATE_PRODUCTS
   }
-}
-
-/** Latest PDP payload for the insight source tab (re-read on each Check Price). */
-const loadInsightRequestFromSession = async (): Promise<InsightRequest | null> => {
-  const tabId = await resolveInsightSourceTabId()
-  if (tabId === undefined) {
-    return null
-  }
-  const raw = await getStoredProductPayloadForTab(tabId)
-  if (!raw) {
-    return null
-  }
-  const stored = await chrome.storage.local.get(SITE_EXTRACTOR_CONFIG_JSON_KEY)
-  const rawJson = stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] as string | undefined
-  const cfgParsed =
-    typeof rawJson === 'string' && rawJson.trim().length > 0
-      ? parseSiteExtractorConfigJson(rawJson)
-      : parseSiteExtractorConfigJson(defaultSiteExtractorConfigJson())
-  let skipAffiliate = false
-  if (cfgParsed.success) {
-    const site = cfgParsed.data.sites.find((s) => s.id === raw.retailer)
-    skipAffiliate = Boolean(site?.isService)
-  }
-  const parsed = insightRequestSchema.safeParse({
-    product: raw,
-    flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate }
-  })
-  return parsed.success ? parsed.data : null
 }
 
 const appendOnceForInsight = (
@@ -142,6 +104,7 @@ export const SidePanelApp = () => {
   const [displayName, setDisplayName] = useState(DEFAULT_DISPLAY_NAME)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [requestPayload, setRequestPayload] = useState<InsightRequest | null>(null)
+  const [insightSourceIsService, setInsightSourceIsService] = useState(false)
   const [panelView, setPanelView] = useState<'chat' | 'settings'>('chat')
   const seenInsightIdsRef = useRef(new Set<string>())
 
@@ -166,7 +129,9 @@ export const SidePanelApp = () => {
       return
     }
     const loadSession = async () => {
-      setRequestPayload(await loadInsightRequestFromSession())
+      const ctx = await loadInsightSessionContext()
+      setRequestPayload(ctx.insightRequest)
+      setInsightSourceIsService(ctx.isServiceSite)
     }
     void loadSession()
   }, [hydrated])
@@ -210,8 +175,10 @@ export const SidePanelApp = () => {
   })
 
   const handleCheckPrice = async () => {
-    const freshPayload = await loadInsightRequestFromSession()
-    setRequestPayload(freshPayload)
+    const ctx = await loadInsightSessionContext()
+    setRequestPayload(ctx.insightRequest)
+    setInsightSourceIsService(ctx.isServiceSite)
+    const freshPayload = ctx.insightRequest
 
     if (!freshPayload) {
       setMessages((prev) => [
@@ -221,7 +188,7 @@ export const SidePanelApp = () => {
           id: createId(),
           role: 'assistant',
           kind: 'text',
-          text: 'Open an Amazon product page in this tab first so ShopFriend can read the listing.'
+          text: 'Open a supported product or service page in this tab first so ShopFriend can read the context.'
         }
       ])
       return
@@ -312,7 +279,9 @@ export const SidePanelApp = () => {
               >
                 {messages.length === 0 ? (
                   <p className="sf-text-muted px-1 py-2 text-center">
-                    No messages yet — try Check Price on a product tab.
+                    {insightSourceIsService
+                      ? 'No messages yet — use Get Review Insight on this service page (coming soon).'
+                      : 'No messages yet — try Check Price on a product tab.'}
                   </p>
                 ) : (
                   messages.map((m) => {
@@ -348,16 +317,22 @@ export const SidePanelApp = () => {
 
           <div className="shrink-0 space-y-2 border-t border-sf-outline/10 bg-sf-surface-container-low/60 px-4 py-3">
             <div className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row">
+              {insightSourceIsService ? null : (
+                <button
+                  type="button"
+                  className="sf-btn-primary flex-1"
+                  onClick={() => void handleCheckPrice()}
+                  disabled={priceMutation.isPending}
+                  aria-busy={priceMutation.isPending}
+                >
+                  {priceMutation.isPending ? 'Checking price…' : 'Check Price'}
+                </button>
+              )}
               <button
                 type="button"
-                className="sf-btn-primary flex-1"
-                onClick={() => void handleCheckPrice()}
-                disabled={priceMutation.isPending}
-                aria-busy={priceMutation.isPending}
+                className={insightSourceIsService ? 'sf-btn-primary flex-1' : 'sf-btn-secondary flex-1'}
+                onClick={handleReviewInsightStub}
               >
-                {priceMutation.isPending ? 'Checking price…' : 'Check Price'}
-              </button>
-              <button type="button" className="sf-btn-secondary flex-1" onClick={handleReviewInsightStub}>
                 Get Review Insight
               </button>
             </div>

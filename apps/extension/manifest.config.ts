@@ -32,7 +32,12 @@ export default defineManifest({
     type: 'module'
   },
   permissions: ['storage', 'sidePanel', 'scripting', 'tabs', 'windows'],
-  host_permissions: ['https://www.amazon.com/*', insightApiHostPermission],
+  host_permissions: [
+    'https://www.amazon.com/*',
+    'https://madmuscles.com/*',
+    'https://www.madmuscles.com/*',
+    insightApiHostPermission
+  ],
   /** Grant when adding non-Amazon sites in Settings (POC); `registerContentScripts` needs host access. */
   optional_host_permissions: ['https://*/*', 'http://*/*'],
   /**

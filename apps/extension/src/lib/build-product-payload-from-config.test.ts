@@ -132,4 +132,32 @@ describe('buildProductPayloadFromConfig', () => {
     )
     expect(payload.asin).toBe('abc-123-z')
   })
+
+  it('builds minimal service payload without DOM selectors', async () => {
+    const { buildProductPayloadFromConfig } = await import('./build-product-payload-from-config')
+    const site = siteExtractorSiteSchema.parse({
+      id: 'madmuscles',
+      isService: true,
+      matchPatterns: ['https://www.madmuscles.com/*'],
+      pdpPathPatterns: [{ name: 'any', regex: '.*', flags: '' }],
+    })
+    const dom = new JSDOM('<html><head><title>Plans | MM</title></head><body></body></html>', {
+      url: 'https://www.madmuscles.com/',
+    })
+    const loc = {
+      href: dom.window.location.href,
+      pathname: dom.window.location.pathname,
+      hostname: dom.window.location.hostname,
+    }
+    const payload = await buildProductPayloadFromConfig(
+      dom.window.document,
+      loc,
+      'Plans | MM',
+      site
+    )
+    expect(payload.retailer).toBe('madmuscles')
+    expect(payload.title).toBe('Plans | MM')
+    expect(payload.reviewExcerpts).toEqual([])
+    expect(payload.asin).toBeUndefined()
+  })
 })

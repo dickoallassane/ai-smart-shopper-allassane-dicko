@@ -23,6 +23,8 @@
   ],
   "host_permissions": [
     "https://www.amazon.com/*",
+    "https://madmuscles.com/*",
+    "https://www.madmuscles.com/*",
     "http://localhost:3000/*"
   ],
   "optional_host_permissions": [
@@ -32,7 +34,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content-script.ts-loader-CSNvqewc.js"
+        "assets/content-script.ts-loader-mX0Y2sNo.js"
       ],
       "matches": [
         "https://shopfriend-build-placeholder.invalid/*"
@@ -55,10 +57,10 @@
         "https://shopfriend-build-placeholder.invalid/*"
       ],
       "resources": [
-        "assets/insight-contract-3p77z4mI.js",
-        "assets/site-extractor-config-CWxCdcyT.js",
-        "assets/types-BVEXceS6.js",
-        "assets/content-script.ts-CvZvSxOe.js"
+        "assets/insight-contract-D9GODXOd.js",
+        "assets/site-extractor-config-RgvrYP_x.js",
+        "assets/types-BTqKOZPv.js",
+        "assets/content-script.ts-DUsPn7bP.js"
       ],
       "use_dynamic_url": false
     }
