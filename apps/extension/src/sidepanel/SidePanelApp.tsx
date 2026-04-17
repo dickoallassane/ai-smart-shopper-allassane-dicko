@@ -1,13 +1,9 @@
 import { useMutation } from '@tanstack/react-query'
-import {
-  insightRequestSchema,
-  type AffiliateMatch,
-  type InsightRequest,
-  type InsightResponse
-} from '@shopfriend/shared'
+import { type AffiliateMatch, type InsightRequest, type InsightResponse } from '@shopfriend/shared'
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
-import { getStoredProductPayloadForTab, resolveInsightSourceTabId } from '../lib/pdp-session-storage'
+import { loadInsightSessionContext } from '../lib/insight-session-context'
 import { requestInsight } from '../lib/request-insight'
+import { SettingsPanel } from './SettingsPanel'
 
 const DISPLAY_NAME_KEY = 'extensionDisplayName'
 /** Until auth writes a real name, default shown in the header */
@@ -45,23 +41,6 @@ const buildPriceCheckAssistantMessage = (insight: InsightResponse): ChatMessage 
     kind: 'text',
     text: NO_AFFILIATE_PRODUCTS
   }
-}
-
-/** Latest PDP payload for the insight source tab (re-read on each Check Price). */
-const loadInsightRequestFromSession = async (): Promise<InsightRequest | null> => {
-  const tabId = await resolveInsightSourceTabId()
-  if (tabId === undefined) {
-    return null
-  }
-  const raw = await getStoredProductPayloadForTab(tabId)
-  if (!raw) {
-    return null
-  }
-  const parsed = insightRequestSchema.safeParse({
-    product: raw,
-    flags: { llmEnabled: true, pricingBetaEnabled: false }
-  })
-  return parsed.success ? parsed.data : null
 }
 
 const appendOnceForInsight = (
@@ -125,6 +104,8 @@ export const SidePanelApp = () => {
   const [displayName, setDisplayName] = useState(DEFAULT_DISPLAY_NAME)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [requestPayload, setRequestPayload] = useState<InsightRequest | null>(null)
+  const [insightSourceIsService, setInsightSourceIsService] = useState(false)
+  const [panelView, setPanelView] = useState<'chat' | 'settings'>('chat')
   const seenInsightIdsRef = useRef(new Set<string>())
 
   useEffect(() => {
@@ -148,7 +129,9 @@ export const SidePanelApp = () => {
       return
     }
     const loadSession = async () => {
-      setRequestPayload(await loadInsightRequestFromSession())
+      const ctx = await loadInsightSessionContext()
+      setRequestPayload(ctx.insightRequest)
+      setInsightSourceIsService(ctx.isServiceSite)
     }
     void loadSession()
   }, [hydrated])
@@ -192,8 +175,10 @@ export const SidePanelApp = () => {
   })
 
   const handleCheckPrice = async () => {
-    const freshPayload = await loadInsightRequestFromSession()
-    setRequestPayload(freshPayload)
+    const ctx = await loadInsightSessionContext()
+    setRequestPayload(ctx.insightRequest)
+    setInsightSourceIsService(ctx.isServiceSite)
+    const freshPayload = ctx.insightRequest
 
     if (!freshPayload) {
       setMessages((prev) => [
@@ -203,7 +188,7 @@ export const SidePanelApp = () => {
           id: createId(),
           role: 'assistant',
           kind: 'text',
-          text: 'Open an Amazon product page in this tab first so ShopFriend can read the listing.'
+          text: 'Open a supported product or service page in this tab first so ShopFriend can read the context.'
         }
       ])
       return
@@ -227,7 +212,7 @@ export const SidePanelApp = () => {
   }
 
   const handleSettings = () => {
-    console.debug('[ShopFriend] Settings (stub until auth)')
+    setPanelView('settings')
   }
 
   const handleLogout = () => {
@@ -255,7 +240,7 @@ export const SidePanelApp = () => {
             </div>
             <div className="min-w-0">
               <p className="sf-font-display truncate text-base font-bold text-sf-secondary-dark">{displayName}</p>
-              <p className="sf-text-muted">Discussion</p>
+              <p className="sf-text-muted">{panelView === 'settings' ? 'Settings' : 'Discussion'}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -263,7 +248,7 @@ export const SidePanelApp = () => {
               type="button"
               className="sf-btn-secondary px-3 py-1.5 text-xs"
               onClick={handleSettings}
-              aria-label="Open settings (coming soon)"
+              aria-label="Open site extractor settings"
             >
               Settings
             </button>
@@ -279,65 +264,81 @@ export const SidePanelApp = () => {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <div className="mx-auto flex max-w-xl flex-col gap-2">
-          <p className="sf-text-muted px-1">Thread</p>
-          <div
-            className="flex min-h-[120px] flex-col gap-2 rounded-2xl bg-sf-surface-container-low/80 p-3"
-            role="log"
-            aria-relevant="additions"
-            aria-live="polite"
-          >
-            {messages.length === 0 ? (
-              <p className="sf-text-muted px-1 py-2 text-center">No messages yet — try Check Price on a product tab.</p>
-            ) : (
-              messages.map((m) => {
-                if (m.role === 'user') {
-                  return (
-                    <div key={m.id} className="sf-chat-user">
-                      {m.text}
-                    </div>
-                  )
-                }
-                if (m.kind === 'text') {
-                  return (
-                    <div key={m.id} className="sf-chat-assistant">
-                      {m.text}
-                    </div>
-                  )
-                }
-                return (
-                  <div key={m.id} className="sf-chat-assistant flex flex-col gap-3">
-                    <p className="m-0 text-sm leading-snug">{m.intro}</p>
-                    <div className="flex flex-col gap-3">
-                      {m.matches.map((match) => (
-                        <AffiliateMatchCard key={match.offerId} match={match} />
-                      ))}
-                    </div>
-                  </div>
-                )
-              })
-            )}
+      {panelView === 'settings' ? (
+        <SettingsPanel onBack={() => setPanelView('chat')} />
+      ) : (
+        <>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className="mx-auto flex max-w-xl flex-col gap-2">
+              <p className="sf-text-muted px-1">Thread</p>
+              <div
+                className="flex min-h-[120px] flex-col gap-2 rounded-2xl bg-sf-surface-container-low/80 p-3"
+                role="log"
+                aria-relevant="additions"
+                aria-live="polite"
+              >
+                {messages.length === 0 ? (
+                  <p className="sf-text-muted px-1 py-2 text-center">
+                    {insightSourceIsService
+                      ? 'No messages yet — use Get Review Insight on this service page (coming soon).'
+                      : 'No messages yet — try Check Price on a product tab.'}
+                  </p>
+                ) : (
+                  messages.map((m) => {
+                    if (m.role === 'user') {
+                      return (
+                        <div key={m.id} className="sf-chat-user">
+                          {m.text}
+                        </div>
+                      )
+                    }
+                    if (m.kind === 'text') {
+                      return (
+                        <div key={m.id} className="sf-chat-assistant">
+                          {m.text}
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={m.id} className="sf-chat-assistant flex flex-col gap-3">
+                        <p className="m-0 text-sm leading-snug">{m.intro}</p>
+                        <div className="flex flex-col gap-3">
+                          {m.matches.map((match) => (
+                            <AffiliateMatchCard key={match.offerId} match={match} />
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="shrink-0 space-y-2 border-t border-sf-outline/10 bg-sf-surface-container-low/60 px-4 py-3">
-        <div className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            className="sf-btn-primary flex-1"
-            onClick={() => void handleCheckPrice()}
-            disabled={priceMutation.isPending}
-            aria-busy={priceMutation.isPending}
-          >
-            {priceMutation.isPending ? 'Checking price…' : 'Check Price'}
-          </button>
-          <button type="button" className="sf-btn-secondary flex-1" onClick={handleReviewInsightStub}>
-            Get Review Insight
-          </button>
-        </div>
-      </div>
+          <div className="shrink-0 space-y-2 border-t border-sf-outline/10 bg-sf-surface-container-low/60 px-4 py-3">
+            <div className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row">
+              {insightSourceIsService ? null : (
+                <button
+                  type="button"
+                  className="sf-btn-primary flex-1"
+                  onClick={() => void handleCheckPrice()}
+                  disabled={priceMutation.isPending}
+                  aria-busy={priceMutation.isPending}
+                >
+                  {priceMutation.isPending ? 'Checking price…' : 'Check Price'}
+                </button>
+              )}
+              <button
+                type="button"
+                className={insightSourceIsService ? 'sf-btn-primary flex-1' : 'sf-btn-secondary flex-1'}
+                onClick={handleReviewInsightStub}
+              >
+                Get Review Insight
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       <footer className="shrink-0 border-t border-sf-outline/15 bg-sf-surface-container-low px-4 py-3 opacity-75">
         <p className="sf-text-muted mb-2 text-center">Chat is disabled in this build.</p>

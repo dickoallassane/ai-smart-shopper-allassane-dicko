@@ -4,7 +4,10 @@ import {
   type InsightResponse
 } from "@shopfriend/shared"
 import { getServerEnv } from "@/lib/env"
-import { searchAffiliateProducts } from "@/server/services/affiliate/searchAffiliateProducts"
+import {
+  searchAffiliateProducts,
+  type AffiliateSearchResult
+} from "@/server/services/affiliate/searchAffiliateProducts"
 
 const INSIGHT_TIMEOUT_MS = 12_000
 
@@ -123,14 +126,20 @@ export const generateInsight = async (
   signal.addEventListener("abort", onParentAbort)
 
   try {
+    const skipAffiliate = request.flags.skipAffiliate === true
+
     const [llm, pricingRows, affiliate] = await Promise.all([
       runStubLlm(request, controller.signal),
       runStubBrightData(request, controller.signal),
-      searchAffiliateProducts(request, controller.signal)
+      skipAffiliate
+        ? Promise.resolve({} as AffiliateSearchResult)
+        : searchAffiliateProducts(request, controller.signal)
     ])
 
     const limitations = [...llm.limitations]
-    if (affiliate.limitation) {
+    if (skipAffiliate) {
+      limitations.push("Affiliate search skipped (service or non-retail context).")
+    } else if (affiliate.limitation) {
       limitations.push(affiliate.limitation)
     }
 

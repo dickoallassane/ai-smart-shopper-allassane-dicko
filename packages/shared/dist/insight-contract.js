@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { productPayloadSchema } from './product-payload';
 export const insightFlagsSchema = z.object({
     llmEnabled: z.boolean(),
-    pricingBetaEnabled: z.boolean()
+    pricingBetaEnabled: z.boolean(),
+    /** When true, server skips affiliate product search (e.g. service sites). */
+    skipAffiliate: z.boolean().default(false)
 });
 export const insightRequestSchema = z.object({
     product: productPayloadSchema,

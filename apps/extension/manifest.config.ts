@@ -32,12 +32,34 @@ export default defineManifest({
     type: 'module'
   },
   permissions: ['storage', 'sidePanel', 'scripting', 'tabs', 'windows'],
-  host_permissions: ['https://www.amazon.com/*', insightApiHostPermission],
+  host_permissions: [
+    'https://www.amazon.com/*',
+    'https://madmuscles.com/*',
+    'https://www.madmuscles.com/*',
+    insightApiHostPermission
+  ],
+  /** Grant when adding non-Amazon sites in Settings (POC); `registerContentScripts` needs host access. */
+  optional_host_permissions: ['https://*/*', 'http://*/*'],
+  /**
+   * Placeholder match so Vite emits the content-script bundle; real sites are
+   * registered at runtime via `chrome.scripting.registerContentScripts`.
+   */
   content_scripts: [
     {
-      matches: ['https://www.amazon.com/*'],
+      matches: ['https://shopfriend-build-placeholder.invalid/*'],
       js: ['src/content-script.ts'],
       run_at: 'document_idle'
+    }
+  ],
+  /**
+   * Loader uses `import(chrome.runtime.getURL("assets/…"))`; crxjs default WAR only
+   * matched the build placeholder. Real PDP origins must be allowed or Chrome
+   * denies loading the ESM chunk from the page world.
+   */
+  web_accessible_resources: [
+    {
+      resources: ['assets/*.js'],
+      matches: ['<all_urls>']
     }
   ]
 })

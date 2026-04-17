@@ -1,7 +1,8 @@
 import { z } from 'zod';
-/** Bounded on-page product context extracted from a retailer PDP (v1: Amazon). */
+/** Bounded on-page product context extracted from a retailer or service PDP. */
 export const productPayloadSchema = z.object({
-    retailer: z.literal('amazon'),
+    /** Stable site id from extension config (e.g. `amazon`, `acme-store`) */
+    retailer: z.string().min(1).max(64),
     locale: z.string().min(2).max(16).default('en-US'),
     url: z.string().url(),
     asin: z.string().min(8).max(16).optional(),

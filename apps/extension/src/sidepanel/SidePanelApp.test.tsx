@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import type { InsightResponse } from "@shopfriend/shared"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -8,6 +8,11 @@ import {
   INSIGHT_CONTEXT_TAB_BY_WINDOW_ID,
   PRODUCT_PAYLOAD_BY_TAB_ID
 } from "../lib/pdp-session-storage"
+import {
+  DEFAULT_SITE_EXTRACTOR_CONFIG,
+  SITE_CONFIGS_UPDATED,
+  SITE_EXTRACTOR_CONFIG_JSON_KEY
+} from "../lib/site-extractor-config"
 import { createChromeMock } from "../test-utils/chrome-mock"
 
 const validProduct = {
@@ -99,10 +104,28 @@ describe("SidePanelApp", () => {
     chromeMock = createChromeMock()
     chromeMock.install()
     chromeMock.storageLocalGet.mockImplementation(
-      (_keys: string | string[] | Record<string, unknown> | null, cb?: (r: Record<string, unknown>) => void) => {
-        if (cb) {
-          cb({ ...stored })
+      (keys: string | string[] | Record<string, unknown> | null, cb?: (r: Record<string, unknown>) => void) => {
+        const list =
+          keys === null
+            ? Object.keys(stored)
+            : typeof keys === "string"
+              ? [keys]
+              : Array.isArray(keys)
+                ? keys
+                : typeof keys === "object"
+                  ? Object.keys(keys)
+                  : []
+        const out: Record<string, unknown> = {}
+        for (const k of list) {
+          if (Object.prototype.hasOwnProperty.call(stored, k)) {
+            out[k] = stored[k]
+          }
         }
+        if (typeof cb === "function") {
+          cb(out)
+          return undefined
+        }
+        return Promise.resolve(out)
       }
     )
     chromeMock.storageLocalSet.mockImplementation(
@@ -266,7 +289,7 @@ describe("SidePanelApp", () => {
     await user.click(screen.getByRole("button", { name: /^Check Price$/i }))
     await waitFor(() => {
       expect(
-        screen.getByText(/Open an Amazon product page in this tab first/i)
+        screen.getByText(/Open a supported product or service page in this tab first/i)
       ).toBeInTheDocument()
     })
     expect(chromeMock.runtimeSendMessage).not.toHaveBeenCalled()
@@ -287,6 +310,113 @@ describe("SidePanelApp", () => {
     )
     await waitFor(() => {
       expect(screen.getByText("No product is found")).toBeInTheDocument()
+    })
+  })
+
+  it("opens site extractor settings and returns to discussion with Back", async () => {
+    const user = userEvent.setup()
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByText(/^Thread$/)).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Open site extractor settings/i }))
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Site extractors/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/^Thread$/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Back to discussion/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/^Thread$/)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/^Discussion$/)).toBeInTheDocument()
+  })
+
+  it("shows a validation error when Site extractor JSON is invalid", async () => {
+    const user = userEvent.setup()
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Open site extractor settings/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Open site extractor settings/i }))
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Site extractor configuration JSON/i)).toBeInTheDocument()
+    })
+    const textarea = screen.getByLabelText(/Site extractor configuration JSON/i)
+    fireEvent.change(textarea, { target: { value: "{" } })
+    await user.click(screen.getByRole("button", { name: /^Validate$/i }))
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument()
+    })
+  })
+
+  it("persists valid site config and notifies the service worker on Save", async () => {
+    const user = userEvent.setup()
+    chromeMock.runtimeSendMessage.mockClear()
+    chromeMock.storageLocalSet.mockClear()
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Open site extractor settings/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Open site extractor settings/i }))
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Site extractor configuration JSON/i)).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Save & register/i }))
+    await waitFor(() => {
+      expect(chromeMock.storageLocalSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          [SITE_EXTRACTOR_CONFIG_JSON_KEY]: expect.stringMatching(/"sites"\s*:\s*\[/),
+        })
+      )
+    })
+    await waitFor(() => {
+      expect(chromeMock.runtimeSendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: SITE_CONFIGS_UPDATED })
+      )
+    })
+    expect(chrome.permissions.request).toHaveBeenCalled()
+  })
+
+  it("hides Check Price when the insight source tab is a service site (madmuscles)", async () => {
+    sessionValues = {
+      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
+      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
+        "55": {
+          retailer: "madmuscles",
+          locale: "en-US",
+          url: "https://www.madmuscles.com/",
+          title: "Coaching",
+          reviewExcerpts: [] as string[],
+          extractedAt: "2026-04-15T12:00:00.000Z",
+        },
+      },
+    }
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /^Check Price$/i })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+  })
+
+  it("shows service empty-thread hint when tab is a service site", async () => {
+    sessionValues = {
+      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
+      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
+        "55": {
+          retailer: "madmuscles",
+          locale: "en-US",
+          url: "https://www.madmuscles.com/",
+          title: "Coaching",
+          reviewExcerpts: [] as string[],
+          extractedAt: "2026-04-15T12:00:00.000Z",
+        },
+      },
+    }
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByText(/Get Review Insight on this service page/i)).toBeInTheDocument()
     })
   })
 })

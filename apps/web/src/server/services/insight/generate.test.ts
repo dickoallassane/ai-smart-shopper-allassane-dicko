@@ -1,9 +1,10 @@
 import { insightResponseSchema, type InsightRequest } from "@shopfriend/shared"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import * as affiliate from "../affiliate/searchAffiliateProducts"
 import { generateInsight } from "./generate"
 
 const baseProduct = {
-  retailer: "amazon" as const,
+  retailer: "amazon",
   locale: "en-US",
   url: "https://www.amazon.com/dp/B0DZZWMB2L",
   title: "Test product title for insight generation",
@@ -16,6 +17,7 @@ const request = (overrides: Partial<InsightRequest> = {}): InsightRequest => ({
   flags: {
     llmEnabled: true,
     pricingBetaEnabled: false,
+    skipAffiliate: false,
     ...overrides.flags
   }
 })
@@ -41,7 +43,7 @@ describe("generateInsight", () => {
   it("returns LLM-off stub when llmEnabled is false", async () => {
     const ac = new AbortController()
     const promise = generateInsight(
-      request({ flags: { llmEnabled: false, pricingBetaEnabled: false } }),
+      request({ flags: { llmEnabled: false, pricingBetaEnabled: false, skipAffiliate: false } }),
       ac.signal
     )
     await vi.advanceTimersByTimeAsync(50)
@@ -73,7 +75,7 @@ describe("generateInsight", () => {
     const ac = new AbortController()
     const promise = generateInsight(
       request({
-        flags: { llmEnabled: false, pricingBetaEnabled: true }
+        flags: { llmEnabled: false, pricingBetaEnabled: true, skipAffiliate: false }
       }),
       ac.signal
     )
@@ -138,6 +140,23 @@ describe("generateInsight", () => {
         "https://affiliate-api.test/v1/products",
         expect.objectContaining({ method: "POST" })
       )
+    })
+
+    it("does not call affiliate search when skipAffiliate is true", async () => {
+      const spy = vi.spyOn(affiliate, "searchAffiliateProducts").mockResolvedValue({
+        matches: [{ offerId: "x" } as never]
+      })
+      const ac = new AbortController()
+      const promise = generateInsight(
+        request({ flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate: true } }),
+        ac.signal
+      )
+      await vi.advanceTimersByTimeAsync(200)
+      const result = await promise
+      expect(spy).toHaveBeenCalledTimes(0)
+      expect(result.affiliateMatches).toBeUndefined()
+      expect(result.limitations.some((l) => l.includes("Affiliate search skipped"))).toBe(true)
+      spy.mockRestore()
     })
   })
 })

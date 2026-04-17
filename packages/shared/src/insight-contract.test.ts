@@ -6,7 +6,7 @@ import {
 } from "./insight-contract"
 
 const validProduct = {
-  retailer: "amazon" as const,
+  retailer: "amazon",
   locale: "en-US",
   url: "https://www.amazon.com/dp/B0DZZWMB2L",
   title: "Example product",
@@ -29,6 +29,22 @@ describe("insightRequestSchema", () => {
       flags: { llmEnabled: false, pricingBetaEnabled: false }
     })
     expect(result.success).toBe(false)
+  })
+
+  it("defaults skipAffiliate to false when omitted", () => {
+    const parsed = insightRequestSchema.parse({
+      product: validProduct,
+      flags: { llmEnabled: true, pricingBetaEnabled: false }
+    })
+    expect(parsed.flags.skipAffiliate).toBe(false)
+  })
+
+  it("accepts skipAffiliate true", () => {
+    const parsed = insightRequestSchema.parse({
+      product: { ...validProduct, retailer: "acme-saas" },
+      flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate: true }
+    })
+    expect(parsed.flags.skipAffiliate).toBe(true)
   })
 })
 

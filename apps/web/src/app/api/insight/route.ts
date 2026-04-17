@@ -2,6 +2,7 @@ import { insightRequestSchema, insightErrorBodySchema } from "@shopfriend/shared
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { generateInsight } from "@/server/services/insight/generate"
+import { persistInsightJsonSnapshot } from "@/server/services/insight/persist-insight-json"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,12 +48,16 @@ const verifyBearer = async (request: NextRequest) => {
 const isSupabaseConfigured = () =>
   Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 
+/** Opt-in: set `SHOPFRIEND_REQUIRE_INSIGHT_AUTH=true` when Supabase is ready and callers must send a Bearer token. */
+const insightAuthRequired = () =>
+  process.env.SHOPFRIEND_REQUIRE_INSIGHT_AUTH === "true" && isSupabaseConfigured()
+
 export const POST = async (request: NextRequest) => {
   const requestId = crypto.randomUUID()
   const controller = new AbortController()
 
   try {
-    if (isSupabaseConfigured()) {
+    if (insightAuthRequired()) {
       const { userId } = await verifyBearer(request)
       if (!userId) {
         return jsonError(401, { error: "Unauthorized", code: "UNAUTHORIZED", requestId })
@@ -67,11 +72,19 @@ export const POST = async (request: NextRequest) => {
     }
 
     const insight = await generateInsight(parsed.data, controller.signal)
+    void persistInsightJsonSnapshot({
+      routeRequestId: requestId,
+      request: parsed.data,
+      response: insight
+    }).catch((err) => {
+      console.warn("[ShopFriend] insight JSON snapshot failed (non-fatal)", err)
+    })
     return NextResponse.json(insight, { headers: corsHeaders })
   } catch (error) {
     if ((error as Error)?.name === "AbortError") {
       return jsonError(504, { error: "Insight timed out", code: "TIMEOUT", requestId })
     }
+    console.error("[ShopFriend] /api/insight", requestId, error)
     return jsonError(500, { error: "Insight failed", code: "INTERNAL", requestId })
   }
 }
