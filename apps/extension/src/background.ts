@@ -1,11 +1,5 @@
 import type { InsightRequest, InsightResponse, ProductPayload } from '@shopfriend/shared'
-import {
-  INSIGHT_CONTEXT_TAB_BY_WINDOW_ID,
-  PRODUCT_PAYLOAD_BY_TAB_ID,
-  mergeProductPayloadForTab,
-  type InsightContextTabByWindowId,
-  type ProductPayloadByTabId
-} from './lib/pdp-session-storage'
+import { PRODUCT_PAYLOAD_BY_TAB_ID, mergeProductPayloadForTab, type ProductPayloadByTabId } from './lib/pdp-session-storage'
 import {
   defaultSiteExtractorConfigJson,
   parseSiteExtractorConfigJson,
@@ -162,20 +156,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // `sidePanel.open` to the user gesture from the popup; earlier awaits
       // (tabs.get, storage) consume that chain and the open silently fails.
       await chrome.sidePanel.open({ tabId })
-      try {
-        const tab = await chrome.tabs.get(tabId)
-        const session = await chrome.storage.session.get(INSIGHT_CONTEXT_TAB_BY_WINDOW_ID)
-        const prev =
-          (session[INSIGHT_CONTEXT_TAB_BY_WINDOW_ID] as InsightContextTabByWindowId | undefined) ?? {}
-        await chrome.storage.session.set({
-          [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: {
-            ...prev,
-            [String(tab.windowId)]: tabId
-          }
-        })
-      } catch (error) {
-        console.warn('[ShopFriend] Could not persist insight context tab for window', error)
-      }
     }
     void open()
     return

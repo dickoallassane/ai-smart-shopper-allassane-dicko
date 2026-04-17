@@ -1,55 +1,53 @@
+import type { ProductPayload } from '@shopfriend/shared'
 import {
   buildProductPayloadFromConfig,
   findSiteForLocation
 } from './lib/build-product-payload-from-config'
-import {
-  defaultSiteExtractorConfigJson,
-  parseSiteExtractorConfigJson,
-  SITE_EXTRACTOR_CONFIG_JSON_KEY
-} from './lib/site-extractor-config'
+import { loadSitesFromStorage } from './lib/load-sites-config'
+import { SHOPFRIEND_SNAPSHOT_PRODUCT } from './lib/shopfriend-messages'
 
 const PUBLISH_DEBOUNCE_MS = 320
 
 let publishTimer: ReturnType<typeof setTimeout> | null = null
 
-const loadSitesConfig = async () => {
-  const stored = await chrome.storage.local.get(SITE_EXTRACTOR_CONFIG_JSON_KEY)
-  const raw = stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] as string | undefined
-  const parsed =
-    typeof raw === 'string' && raw.trim().length > 0
-      ? parseSiteExtractorConfigJson(raw)
-      : parseSiteExtractorConfigJson(defaultSiteExtractorConfigJson())
-  if (!parsed.success) {
-    console.warn('[ShopFriend] Site config invalid', parsed.error)
-    return null
-  }
-  return parsed.data.sites
-}
+type SnapshotResult =
+  | { ok: true; product: ProductPayload }
+  | { ok: false; error: string }
 
-const publishPayload = async () => {
-  const sites = await loadSitesConfig()
+const runProductSnapshot = async (): Promise<SnapshotResult> => {
+  const sites = await loadSitesFromStorage()
   if (!sites?.length) {
-    return
+    return { ok: false, error: 'Site configuration is missing or invalid.' }
   }
   const site = findSiteForLocation(sites, window.location)
   if (!site) {
-    return
+    return { ok: false, error: 'This page is not a configured ShopFriend site.' }
   }
   try {
-    const payload = await buildProductPayloadFromConfig(
+    const product = await buildProductPayloadFromConfig(
       document,
       window.location,
       document.title,
       site
     )
-    console.debug('[ShopFriend] ProductPayload extracted', payload)
-    void chrome.runtime.sendMessage({
-      type: 'PRODUCT_PAYLOAD',
-      payload
-    })
+    return { ok: true, product }
   } catch (error) {
-    console.warn('[ShopFriend] Product extract / validate failed', error)
+    const message = error instanceof Error ? error.message : 'Extraction failed.'
+    return { ok: false, error: message }
   }
+}
+
+const publishPayload = async () => {
+  const result = await runProductSnapshot()
+  if (!result.ok) {
+    console.warn('[ShopFriend] Product extract / validate skipped', result.error)
+    return
+  }
+  console.debug('[ShopFriend] ProductPayload extracted', result.product)
+  void chrome.runtime.sendMessage({
+    type: 'PRODUCT_PAYLOAD',
+    payload: result.product
+  })
 }
 
 const schedulePublish = () => {
@@ -63,6 +61,14 @@ const schedulePublish = () => {
 }
 
 void publishPayload()
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === SHOPFRIEND_SNAPSHOT_PRODUCT) {
+    void runProductSnapshot().then(sendResponse)
+    return true
+  }
+  return false
+})
 
 const observer = new MutationObserver(() => {
   schedulePublish()

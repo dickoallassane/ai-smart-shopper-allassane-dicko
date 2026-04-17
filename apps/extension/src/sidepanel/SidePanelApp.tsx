@@ -6,6 +6,7 @@ import {
   type ReviewDiscoveryResult
 } from '@shopfriend/shared'
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
+import { loadActiveTabSiteHints } from '../lib/active-tab-site-hints'
 import { loadInsightSessionContext } from '../lib/insight-session-context'
 import { requestInsight } from '../lib/request-insight'
 import { SettingsPanel } from './SettingsPanel'
@@ -138,8 +139,8 @@ export const SidePanelApp = () => {
   const [hydrated, setHydrated] = useState(false)
   const [displayName, setDisplayName] = useState(DEFAULT_DISPLAY_NAME)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [requestPayload, setRequestPayload] = useState<InsightRequest | null>(null)
   const [insightSourceIsService, setInsightSourceIsService] = useState(false)
+  const [activeTabSupported, setActiveTabSupported] = useState(false)
   const [panelView, setPanelView] = useState<'chat' | 'settings'>('chat')
   const seenInsightIdsRef = useRef(new Set<string>())
 
@@ -163,12 +164,25 @@ export const SidePanelApp = () => {
     if (!hydrated) {
       return
     }
-    const loadSession = async () => {
-      const ctx = await loadInsightSessionContext()
-      setRequestPayload(ctx.insightRequest)
-      setInsightSourceIsService(ctx.isServiceSite)
+    const refreshTabHints = () => {
+      void loadActiveTabSiteHints().then((hints) => {
+        setInsightSourceIsService(hints.isServiceSite)
+        setActiveTabSupported(hints.supportedPage)
+      })
     }
-    void loadSession()
+    refreshTabHints()
+    const onActivated = () => {
+      refreshTabHints()
+    }
+    const onUpdated = () => {
+      refreshTabHints()
+    }
+    chrome.tabs.onActivated.addListener(onActivated)
+    chrome.tabs.onUpdated.addListener(onUpdated)
+    return () => {
+      chrome.tabs.onActivated.removeListener(onActivated)
+      chrome.tabs.onUpdated.removeListener(onUpdated)
+    }
   }, [hydrated])
 
   const appendInsightToThread = useCallback((insight: InsightResponse) => {
@@ -229,7 +243,6 @@ export const SidePanelApp = () => {
 
   const handleCheckPrice = async () => {
     const ctx = await loadInsightSessionContext()
-    setRequestPayload(ctx.insightRequest)
     setInsightSourceIsService(ctx.isServiceSite)
     const freshPayload = ctx.insightRequest
 
@@ -253,7 +266,6 @@ export const SidePanelApp = () => {
 
   const handleReviewInsight = async () => {
     const ctx = await loadInsightSessionContext()
-    setRequestPayload(ctx.insightRequest)
     setInsightSourceIsService(ctx.isServiceSite)
     const freshPayload = ctx.insightRequest
 
@@ -359,9 +371,11 @@ export const SidePanelApp = () => {
               >
                 {messages.length === 0 ? (
                   <p className="sf-text-muted px-1 py-2 text-center">
-                    {insightSourceIsService
-                      ? 'No messages yet — use Get Review Insight for web research on this service page.'
-                      : 'No messages yet — try Check Price or Get Review Insight on a product tab.'}
+                    {!activeTabSupported
+                      ? 'No messages yet — open a supported product or service tab in this window, then use the actions below.'
+                      : insightSourceIsService
+                        ? 'No messages yet — use Get Review Insight for web research on this service page.'
+                        : 'No messages yet — try Check Price or Get Review Insight on a product tab.'}
                   </p>
                 ) : (
                   messages.map((m) => {

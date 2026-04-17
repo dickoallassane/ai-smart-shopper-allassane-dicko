@@ -1,5 +1,6 @@
-import { insightRequestSchema, type InsightRequest } from '@shopfriend/shared'
-import { getStoredProductPayloadForTab, resolveInsightSourceTabId } from './pdp-session-storage'
+import { insightRequestSchema, type InsightRequest, type ProductPayload } from '@shopfriend/shared'
+import { loadActiveTabSiteHints } from './active-tab-site-hints'
+import { requestProductSnapshotFromActiveTab } from './request-product-snapshot'
 import {
   defaultSiteExtractorConfigJson,
   parseSiteExtractorConfigJson,
@@ -12,15 +13,11 @@ export type InsightSessionContext = {
   isServiceSite: boolean
 }
 
-export const loadInsightSessionContext = async (): Promise<InsightSessionContext> => {
-  const tabId = await resolveInsightSourceTabId()
-  if (tabId === undefined) {
-    return { insightRequest: null, isServiceSite: false }
-  }
-  const raw = await getStoredProductPayloadForTab(tabId)
-  if (!raw) {
-    return { insightRequest: null, isServiceSite: false }
-  }
+/**
+ * Map a freshly extracted {@link ProductPayload} to an {@link InsightRequest} using stored site config.
+ * Used after {@link requestProductSnapshotFromActiveTab} / {@link requestProductSnapshotFromTabId}.
+ */
+export const parseInsightRequestFromProduct = async (raw: ProductPayload): Promise<InsightSessionContext> => {
   const stored = await chrome.storage.local.get(SITE_EXTRACTOR_CONFIG_JSON_KEY)
   const rawJson = stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] as string | undefined
   const cfgParsed =
@@ -48,4 +45,17 @@ export const loadInsightSessionContext = async (): Promise<InsightSessionContext
     insightRequest: parsed.success ? parsed.data : null,
     isServiceSite
   }
+}
+
+/**
+ * Build insight request from a **fresh** product snapshot on the **active tab**
+ * (`chrome.tabs.sendMessage` → content script). Does not read session-cached payloads.
+ */
+export const loadInsightSessionContext = async (): Promise<InsightSessionContext> => {
+  const snapshot = await requestProductSnapshotFromActiveTab()
+  if (!snapshot.ok) {
+    const hints = await loadActiveTabSiteHints()
+    return { insightRequest: null, isServiceSite: hints.isServiceSite }
+  }
+  return parseInsightRequestFromProduct(snapshot.product)
 }

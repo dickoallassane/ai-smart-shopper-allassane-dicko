@@ -1,6 +1,6 @@
-import { insightRequestSchema } from '@shopfriend/shared'
 import { type KeyboardEvent, useEffect, useState } from 'react'
-import { getStoredProductPayloadForTab } from '../lib/pdp-session-storage'
+import { parseInsightRequestFromProduct } from '../lib/insight-session-context'
+import { requestProductSnapshotFromTabId } from '../lib/request-product-snapshot'
 import { SmileLogo } from '../ui/SmileLogo'
 
 type PdpHint = 'none' | 'invalid' | 'ready'
@@ -15,22 +15,13 @@ export const PopupApp = () => {
         setPdpHint('none')
         return
       }
-      const raw = await getStoredProductPayloadForTab(tab.id)
-      if (!raw) {
+      const snapshot = await requestProductSnapshotFromTabId(tab.id)
+      if (!snapshot.ok) {
         setPdpHint('none')
         return
       }
-      const parsed = insightRequestSchema.safeParse({
-        product: raw,
-        flags: {
-          llmEnabled: true,
-          pricingBetaEnabled: false,
-          skipAffiliate: false,
-          insightKind: 'price_check',
-          isServiceSite: false
-        }
-      })
-      if (!parsed.success) {
+      const ctx = await parseInsightRequestFromProduct(snapshot.product)
+      if (!ctx.insightRequest) {
         setPdpHint('invalid')
         return
       }

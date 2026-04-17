@@ -5,10 +5,6 @@ import type { InsightResponse } from "@shopfriend/shared"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { SidePanelApp } from "./SidePanelApp"
 import {
-  INSIGHT_CONTEXT_TAB_BY_WINDOW_ID,
-  PRODUCT_PAYLOAD_BY_TAB_ID
-} from "../lib/pdp-session-storage"
-import {
   DEFAULT_SITE_EXTRACTOR_CONFIG,
   SITE_CONFIGS_UPDATED,
   SITE_EXTRACTOR_CONFIG_JSON_KEY
@@ -123,11 +119,9 @@ const renderSidePanel = () => {
 describe("SidePanelApp", () => {
   let chromeMock: ReturnType<typeof createChromeMock>
   let stored: Record<string, unknown>
-  let sessionValues: Record<string, unknown>
 
   beforeEach(() => {
     stored = {}
-    sessionValues = {}
     chromeMock = createChromeMock()
     chromeMock.install()
     chromeMock.storageLocalGet.mockImplementation(
@@ -163,29 +157,18 @@ describe("SidePanelApp", () => {
         }
       }
     )
-    chromeMock.storageSessionGet.mockImplementation(
-      async (keys: string | string[] | Record<string, unknown> | null | undefined) => {
-        const names =
-          keys === null || keys === undefined
-            ? Object.keys(sessionValues)
-            : typeof keys === "string"
-              ? [keys]
-              : Array.isArray(keys)
-                ? keys
-                : typeof keys === "object"
-                  ? Object.keys(keys)
-                  : []
-        const out: Record<string, unknown> = {}
-        for (const n of names) {
-          if (Object.prototype.hasOwnProperty.call(sessionValues, n)) {
-            out[n] = sessionValues[n]
-          }
+    chromeMock.storageSessionGet.mockResolvedValue({})
+    chromeMock.windowsGetCurrent.mockResolvedValue({ id: 10 })
+    chromeMock.tabsQuery.mockResolvedValue([
+      { id: 77, url: "https://www.amazon.com/dp/B0DZZWMB2L" }
+    ])
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, product: validProduct })
         }
-        return out
       }
     )
-    chromeMock.windowsGetCurrent.mockResolvedValue({ id: 10 })
-    chromeMock.tabsQuery.mockResolvedValue([{ id: 77 }])
   })
 
   afterEach(() => {
@@ -224,10 +207,6 @@ describe("SidePanelApp", () => {
 
   it("requests review discovery and shows source links when Get Review Insight succeeds", async () => {
     const user = userEvent.setup()
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "55": validProduct }
-    }
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     chromeMock.runtimeSendMessage.mockImplementation(
       (msg: { type?: string; payload?: { flags?: { insightKind?: string } } }, cb?: (r: unknown) => void) => {
@@ -254,10 +233,6 @@ describe("SidePanelApp", () => {
 
   it("requests insight and shows price-check user copy when Check Price is clicked with valid session", async () => {
     const user = userEvent.setup()
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "55": validProduct }
-    }
     chromeMock.runtimeSendMessage.mockImplementation(
       (msg: { type?: string }, cb?: (r: unknown) => void) => {
         if (typeof cb === "function") {
@@ -290,10 +265,6 @@ describe("SidePanelApp", () => {
 
   it("shows intro and two affiliate cards when insight includes affiliateMatches", async () => {
     const user = userEvent.setup()
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "55": validProduct }
-    }
     chromeMock.runtimeSendMessage.mockImplementation(
       (_msg: { type?: string }, cb?: (r: unknown) => void) => {
         if (typeof cb === "function") {
@@ -327,6 +298,13 @@ describe("SidePanelApp", () => {
 
   it("shows guidance in thread when Check Price is clicked without product context", async () => {
     const user = userEvent.setup()
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: false, error: "No receiver" })
+        }
+      }
+    )
     renderSidePanel()
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^Check Price$/i })).toBeInTheDocument()
@@ -423,19 +401,26 @@ describe("SidePanelApp", () => {
   })
 
   it("hides Check Price when the insight source tab is a service site (madmuscles)", async () => {
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
-        "55": {
-          retailer: "madmuscles",
-          locale: "en-US",
-          url: "https://www.madmuscles.com/",
-          title: "Coaching",
-          reviewExcerpts: [] as string[],
-          extractedAt: "2026-04-15T12:00:00.000Z",
-        },
-      },
-    }
+    chromeMock.tabsQuery.mockResolvedValue([
+      { id: 77, url: "https://www.madmuscles.com/" }
+    ])
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({
+            ok: true,
+            product: {
+              retailer: "madmuscles",
+              locale: "en-US",
+              url: "https://www.madmuscles.com/",
+              title: "Coaching",
+              reviewExcerpts: [] as string[],
+              extractedAt: "2026-04-15T12:00:00.000Z"
+            }
+          })
+        }
+      }
+    )
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     renderSidePanel()
     await waitFor(() => {
@@ -445,19 +430,26 @@ describe("SidePanelApp", () => {
   })
 
   it("shows service empty-thread hint when tab is a service site", async () => {
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
-        "55": {
-          retailer: "madmuscles",
-          locale: "en-US",
-          url: "https://www.madmuscles.com/",
-          title: "Coaching",
-          reviewExcerpts: [] as string[],
-          extractedAt: "2026-04-15T12:00:00.000Z",
-        },
-      },
-    }
+    chromeMock.tabsQuery.mockResolvedValue([
+      { id: 77, url: "https://www.madmuscles.com/" }
+    ])
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({
+            ok: true,
+            product: {
+              retailer: "madmuscles",
+              locale: "en-US",
+              url: "https://www.madmuscles.com/",
+              title: "Coaching",
+              reviewExcerpts: [] as string[],
+              extractedAt: "2026-04-15T12:00:00.000Z"
+            }
+          })
+        }
+      }
+    )
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     renderSidePanel()
     await waitFor(() => {
