@@ -338,6 +338,9 @@ export const SidePanelApp = () => {
     )
   }
 
+  /** Retail PDP only: configured site match and not a service (`isService`) site in extractor config. */
+  const showCheckPriceButton = activeTabSupported && !insightSourceIsService
+
   return (
     <div className="flex h-screen min-h-0 flex-col bg-sf-surface text-sf-on-surface">
       <header className="sf-surface-header shrink-0 border-b border-sf-outline/10 px-4 py-3">
@@ -459,7 +462,7 @@ export const SidePanelApp = () => {
 
           <div className="shrink-0 space-y-2 border-t border-sf-outline/10 bg-sf-surface-container-low/60 px-4 py-3">
             <div className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row">
-              {insightSourceIsService || !activeTabSupported ? null : (
+              {showCheckPriceButton ? (
                 <button
                   type="button"
                   className="sf-btn-primary flex-1"
@@ -469,12 +472,10 @@ export const SidePanelApp = () => {
                 >
                   {priceMutation.isPending ? 'Checking price…' : 'Check Price'}
                 </button>
-              )}
+              ) : null}
               <button
                 type="button"
-                className={
-                  insightSourceIsService || !activeTabSupported ? 'sf-btn-primary flex-1' : 'sf-btn-secondary flex-1'
-                }
+                className={showCheckPriceButton ? 'sf-btn-secondary flex-1' : 'sf-btn-primary flex-1'}
                 onClick={() => void handleReviewInsight()}
                 disabled={reviewMutation.isPending || priceMutation.isPending}
                 aria-busy={reviewMutation.isPending}
