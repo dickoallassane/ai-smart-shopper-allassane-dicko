@@ -3,7 +3,9 @@ import { productPayloadSchema } from './product-payload'
 
 export const insightFlagsSchema = z.object({
   llmEnabled: z.boolean(),
-  pricingBetaEnabled: z.boolean()
+  pricingBetaEnabled: z.boolean(),
+  /** When true, server skips affiliate product search (e.g. service sites). */
+  skipAffiliate: z.boolean().default(false)
 })
 
 export type InsightFlags = z.infer<typeof insightFlagsSchema>

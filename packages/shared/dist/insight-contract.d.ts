@@ -2,17 +2,21 @@ import { z } from 'zod';
 export declare const insightFlagsSchema: z.ZodObject<{
     llmEnabled: z.ZodBoolean;
     pricingBetaEnabled: z.ZodBoolean;
+    /** When true, server skips affiliate product search (e.g. service sites). */
+    skipAffiliate: z.ZodDefault<z.ZodBoolean>;
 }, "strip", z.ZodTypeAny, {
     llmEnabled: boolean;
     pricingBetaEnabled: boolean;
+    skipAffiliate: boolean;
 }, {
     llmEnabled: boolean;
     pricingBetaEnabled: boolean;
+    skipAffiliate?: boolean | undefined;
 }>;
 export type InsightFlags = z.infer<typeof insightFlagsSchema>;
 export declare const insightRequestSchema: z.ZodObject<{
     product: z.ZodObject<{
-        retailer: z.ZodLiteral<"amazon">;
+        retailer: z.ZodString;
         locale: z.ZodDefault<z.ZodString>;
         url: z.ZodString;
         asin: z.ZodOptional<z.ZodString>;
@@ -23,7 +27,7 @@ export declare const insightRequestSchema: z.ZodObject<{
         sellerFulfillment: z.ZodOptional<z.ZodString>;
         extractedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        retailer: "amazon";
+        retailer: string;
         locale: string;
         url: string;
         title: string;
@@ -34,7 +38,7 @@ export declare const insightRequestSchema: z.ZodObject<{
         ratingSummary?: string | undefined;
         sellerFulfillment?: string | undefined;
     }, {
-        retailer: "amazon";
+        retailer: string;
         url: string;
         title: string;
         extractedAt: string;
@@ -48,16 +52,20 @@ export declare const insightRequestSchema: z.ZodObject<{
     flags: z.ZodObject<{
         llmEnabled: z.ZodBoolean;
         pricingBetaEnabled: z.ZodBoolean;
+        /** When true, server skips affiliate product search (e.g. service sites). */
+        skipAffiliate: z.ZodDefault<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
+        skipAffiliate: boolean;
     }, {
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
+        skipAffiliate?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     product: {
-        retailer: "amazon";
+        retailer: string;
         locale: string;
         url: string;
         title: string;
@@ -71,10 +79,11 @@ export declare const insightRequestSchema: z.ZodObject<{
     flags: {
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
+        skipAffiliate: boolean;
     };
 }, {
     product: {
-        retailer: "amazon";
+        retailer: string;
         url: string;
         title: string;
         extractedAt: string;
@@ -88,6 +97,7 @@ export declare const insightRequestSchema: z.ZodObject<{
     flags: {
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
+        skipAffiliate?: boolean | undefined;
     };
 }>;
 export type InsightRequest = z.infer<typeof insightRequestSchema>;

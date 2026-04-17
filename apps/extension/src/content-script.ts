@@ -1,20 +1,48 @@
-import { buildAmazonProductPayload, isLikelyAmazonPdp } from './lib/amazon-product-from-dom'
+import {
+  buildProductPayloadFromConfig,
+  findSiteForLocation
+} from './lib/build-product-payload-from-config'
+import {
+  defaultSiteExtractorConfigJson,
+  parseSiteExtractorConfigJson,
+  SITE_EXTRACTOR_CONFIG_JSON_KEY
+} from './lib/site-extractor-config'
 
 const PUBLISH_DEBOUNCE_MS = 320
 
 let publishTimer: ReturnType<typeof setTimeout> | null = null
 
-const publishPayload = () => {
-  if (!isLikelyAmazonPdp(window.location)) {
+const loadSitesConfig = async () => {
+  const stored = await chrome.storage.local.get(SITE_EXTRACTOR_CONFIG_JSON_KEY)
+  const raw = stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] as string | undefined
+  const parsed =
+    typeof raw === 'string' && raw.trim().length > 0
+      ? parseSiteExtractorConfigJson(raw)
+      : parseSiteExtractorConfigJson(defaultSiteExtractorConfigJson())
+  if (!parsed.success) {
+    console.warn('[ShopFriend] Site config invalid', parsed.error)
+    return null
+  }
+  return parsed.data.sites
+}
+
+const publishPayload = async () => {
+  const sites = await loadSitesConfig()
+  if (!sites?.length) {
+    return
+  }
+  const site = findSiteForLocation(sites, window.location)
+  if (!site) {
     return
   }
   try {
-    const payload = buildAmazonProductPayload(document, window.location, document.title)
-    console.debug('[ShopFriend] ProductPayload extracted', payload)
-    console.debug(
-      '[ShopFriend] POST /api/insight body would include `product` as above plus `flags` (e.g. from popup)',
-      { product: payload, flags: { llmEnabled: true, pricingBetaEnabled: false } }
+    const payload = await buildProductPayloadFromConfig(
+      document,
+      window.location,
+      document.title,
+      site
     )
+    console.debug('[ShopFriend] ProductPayload extracted', payload)
     void chrome.runtime.sendMessage({
       type: 'PRODUCT_PAYLOAD',
       payload
@@ -30,11 +58,11 @@ const schedulePublish = () => {
   }
   publishTimer = setTimeout(() => {
     publishTimer = null
-    publishPayload()
+    void publishPayload()
   }, PUBLISH_DEBOUNCE_MS)
 }
 
-publishPayload()
+void publishPayload()
 
 const observer = new MutationObserver(() => {
   schedulePublish()

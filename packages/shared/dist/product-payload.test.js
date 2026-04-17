@@ -25,10 +25,18 @@ describe("productPayloadSchema", () => {
         expect(parsed.asin).toBe("B0DZZWMB2L");
         expect(parsed.reviewExcerpts).toHaveLength(1);
     });
-    it("rejects non-Amazon retailer", () => {
+    it("parses non-Amazon retailer slug", () => {
+        const parsed = productPayloadSchema.parse({
+            ...validBase,
+            retailer: "ebay",
+            url: "https://www.ebay.com/itm/123"
+        });
+        expect(parsed.retailer).toBe("ebay");
+    });
+    it("rejects empty retailer", () => {
         expect(() => productPayloadSchema.parse({
             ...validBase,
-            retailer: "ebay"
+            retailer: ""
         })).toThrow();
     });
     it("rejects invalid URL", () => {

@@ -25,13 +25,17 @@
     "https://www.amazon.com/*",
     "http://localhost:3000/*"
   ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
   "content_scripts": [
     {
       "js": [
-        "assets/content-script.ts-loader-y-sN_uYU.js"
+        "assets/content-script.ts-loader-CSNvqewc.js"
       ],
       "matches": [
-        "https://www.amazon.com/*"
+        "https://shopfriend-build-placeholder.invalid/*"
       ],
       "run_at": "document_idle"
     }
@@ -39,11 +43,22 @@
   "web_accessible_resources": [
     {
       "matches": [
-        "https://www.amazon.com/*"
+        "<all_urls>"
       ],
       "resources": [
-        "assets/insight-contract-CN0vUrgd.js",
-        "assets/content-script.ts-DYpZQ3Ob.js"
+        "assets/*.js"
+      ],
+      "use_dynamic_url": false
+    },
+    {
+      "matches": [
+        "https://shopfriend-build-placeholder.invalid/*"
+      ],
+      "resources": [
+        "assets/insight-contract-3p77z4mI.js",
+        "assets/site-extractor-config-CWxCdcyT.js",
+        "assets/types-BVEXceS6.js",
+        "assets/content-script.ts-CvZvSxOe.js"
       ],
       "use_dynamic_url": false
     }

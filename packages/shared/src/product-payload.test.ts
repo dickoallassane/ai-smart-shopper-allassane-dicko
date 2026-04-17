@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { productPayloadSchema } from "./product-payload"
 
 const validBase = {
-  retailer: "amazon" as const,
+  retailer: "amazon",
   locale: "en-US",
   url: "https://www.amazon.com/dp/B0DZZWMB2L",
   title: "Example product title",
@@ -29,11 +29,20 @@ describe("productPayloadSchema", () => {
     expect(parsed.reviewExcerpts).toHaveLength(1)
   })
 
-  it("rejects non-Amazon retailer", () => {
+  it("parses non-Amazon retailer slug", () => {
+    const parsed = productPayloadSchema.parse({
+      ...validBase,
+      retailer: "ebay",
+      url: "https://www.ebay.com/itm/123"
+    })
+    expect(parsed.retailer).toBe("ebay")
+  })
+
+  it("rejects empty retailer", () => {
     expect(() =>
       productPayloadSchema.parse({
         ...validBase,
-        retailer: "ebay"
+        retailer: ""
       })
     ).toThrow()
   })

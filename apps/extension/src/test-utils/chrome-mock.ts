@@ -46,6 +46,9 @@ export const createChromeMock = (): ChromeMock => {
     },
     windows: {
       getCurrent: windowsGetCurrent
+    },
+    permissions: {
+      request: vi.fn().mockResolvedValue(true)
     }
   }
 

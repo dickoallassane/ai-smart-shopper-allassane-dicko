@@ -1,7 +1,8 @@
 import { z } from 'zod';
-/** Bounded on-page product context extracted from a retailer PDP (v1: Amazon). */
+/** Bounded on-page product context extracted from a retailer or service PDP. */
 export declare const productPayloadSchema: z.ZodObject<{
-    retailer: z.ZodLiteral<"amazon">;
+    /** Stable site id from extension config (e.g. `amazon`, `acme-store`) */
+    retailer: z.ZodString;
     locale: z.ZodDefault<z.ZodString>;
     url: z.ZodString;
     asin: z.ZodOptional<z.ZodString>;
@@ -12,7 +13,7 @@ export declare const productPayloadSchema: z.ZodObject<{
     sellerFulfillment: z.ZodOptional<z.ZodString>;
     extractedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    retailer: "amazon";
+    retailer: string;
     locale: string;
     url: string;
     title: string;
@@ -23,7 +24,7 @@ export declare const productPayloadSchema: z.ZodObject<{
     ratingSummary?: string | undefined;
     sellerFulfillment?: string | undefined;
 }, {
-    retailer: "amazon";
+    retailer: string;
     url: string;
     title: string;
     extractedAt: string;

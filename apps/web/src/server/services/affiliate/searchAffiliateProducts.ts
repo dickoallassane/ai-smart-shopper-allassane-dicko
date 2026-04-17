@@ -5,12 +5,16 @@ import {
 } from "@shopfriend/shared"
 import { getServerEnv } from "@/lib/env"
 import { z } from "zod"
+import { isSameRegistrableDomainAsProduct } from "./same-retail-domain"
 
 const AFFILIATE_PATH = "/v1/products"
 const MAX_TITLE_LEN = 200
-/** Max rows to request; UI shows at most MAX_MATCHES_RETURNED */
-const PER_PAGE = 5
+/** Rows to request from Affiliate API (higher than UI cap so same-domain rows can be skipped). */
+const PER_PAGE = 15
 const MAX_MATCHES_RETURNED = 2
+
+const SAME_RETAILER_ONLY_LIMITATION =
+  "Affiliate search only returned offers on the same retailer as the current page."
 
 const networksBodySchema = z.record(
   z.string().min(1),
@@ -275,17 +279,29 @@ export const searchAffiliateProducts = async (
     )
 
     const matches: AffiliateMatch[] = []
+    let skippedSameRetailer = 0
     for (const row of rawRows) {
       const mapped = mapRowToMatch(row, affiliateId)
-      if (mapped) {
-        matches.push(mapped)
+      if (!mapped) {
+        continue
       }
+      if (isSameRegistrableDomainAsProduct(request.product.url, mapped)) {
+        skippedSameRetailer += 1
+        continue
+      }
+      matches.push(mapped)
       if (matches.length >= MAX_MATCHES_RETURNED) {
         break
       }
     }
 
-    return matches.length > 0 ? { matches: matches.slice(0, MAX_MATCHES_RETURNED) } : {}
+    if (matches.length > 0) {
+      return { matches: matches.slice(0, MAX_MATCHES_RETURNED) }
+    }
+    if (skippedSameRetailer > 0) {
+      return { limitation: SAME_RETAILER_ONLY_LIMITATION }
+    }
+    return {}
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error"
     if ((error as Error)?.name === "AbortError") {
