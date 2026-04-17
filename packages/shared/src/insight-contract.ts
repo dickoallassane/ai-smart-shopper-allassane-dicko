@@ -13,7 +13,12 @@ export const insightFlagsSchema = z.object({
   /** `review_discovery` runs Bright Data Discover instead of price-check pipeline. */
   insightKind: insightKindSchema.default('price_check'),
   /** Mirrors extension site config `isService` for prompt shaping on the server. */
-  isServiceSite: z.boolean().default(false)
+  isServiceSite: z.boolean().default(false),
+  /**
+   * No configured PDP extractor matched the tab; Discover targets the tab URL / hostname only
+   * (open-web reputation), not structured product fields from the page.
+   */
+  unsupportedDomainDiscovery: z.boolean().default(false)
 })
 
 export type InsightFlags = z.infer<typeof insightFlagsSchema>

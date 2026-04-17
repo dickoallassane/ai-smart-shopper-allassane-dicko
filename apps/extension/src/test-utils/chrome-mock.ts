@@ -6,6 +6,7 @@ export type ChromeMock = {
   storageLocalSet: ReturnType<typeof vi.fn>
   runtimeSendMessage: ReturnType<typeof vi.fn>
   tabsQuery: ReturnType<typeof vi.fn>
+  tabsGet: ReturnType<typeof vi.fn>
   tabsSendMessage: ReturnType<typeof vi.fn>
   tabsOnActivatedAddListener: ReturnType<typeof vi.fn>
   tabsOnUpdatedAddListener: ReturnType<typeof vi.fn>
@@ -22,6 +23,7 @@ export const createChromeMock = (): ChromeMock => {
   const storageLocalSet = vi.fn()
   const runtimeSendMessage = vi.fn()
   const tabsQuery = vi.fn()
+  const tabsGet = vi.fn()
   const tabsSendMessage = vi.fn()
   const tabsOnActivatedAddListener = vi.fn()
   const tabsOnUpdatedAddListener = vi.fn()
@@ -49,6 +51,7 @@ export const createChromeMock = (): ChromeMock => {
     },
     tabs: {
       query: tabsQuery,
+      get: tabsGet,
       sendMessage: tabsSendMessage,
       onActivated: { addListener: tabsOnActivatedAddListener, removeListener: vi.fn() },
       onUpdated: { addListener: tabsOnUpdatedAddListener, removeListener: vi.fn() }
@@ -75,6 +78,7 @@ export const createChromeMock = (): ChromeMock => {
     storageLocalSet,
     runtimeSendMessage,
     tabsQuery,
+    tabsGet,
     tabsSendMessage,
     tabsOnActivatedAddListener,
     tabsOnUpdatedAddListener,

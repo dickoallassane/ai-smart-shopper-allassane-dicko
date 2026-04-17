@@ -7,7 +7,7 @@ export type ProductSnapshotResult =
 
 type SnapshotResponse = ProductSnapshotResult
 
-const isRestrictedBrowserUrl = (url: string): boolean => {
+export const isRestrictedBrowserUrl = (url: string): boolean => {
   const u = url.trim().toLowerCase()
   return (
     u.startsWith('chrome://') ||

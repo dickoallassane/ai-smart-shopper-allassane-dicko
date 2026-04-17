@@ -34,7 +34,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content-script.ts-loader-BNH5h5E0.js"
+        "assets/content-script.ts-loader-CFpdUzVD.js"
       ],
       "matches": [
         "https://shopfriend-build-placeholder.invalid/*"
@@ -57,9 +57,9 @@
         "https://shopfriend-build-placeholder.invalid/*"
       ],
       "resources": [
-        "assets/shopfriend-messages-QimK9f-V.js",
+        "assets/shopfriend-messages-C6ZjJGfZ.js",
         "assets/site-extractor-config-B9BecTau.js",
-        "assets/content-script.ts-BT3LxdTp.js"
+        "assets/content-script.ts-ia2G716j.js"
       ],
       "use_dynamic_url": false
     }

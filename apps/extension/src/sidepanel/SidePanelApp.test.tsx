@@ -169,6 +169,11 @@ describe("SidePanelApp", () => {
         }
       }
     )
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 77,
+      url: "https://www.amazon.com/dp/B0DZZWMB2L",
+      title: "Example on Amazon"
+    })
   })
 
   afterEach(() => {
@@ -203,6 +208,46 @@ describe("SidePanelApp", () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/Message \(disabled\)/i)).toBeDisabled()
     })
+  })
+
+  it("requests domain review discovery when tab URL is not a configured site", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    const unknownUrl = "https://blog.unknown-example.test/how-to"
+    chromeMock.tabsQuery.mockResolvedValue([{ id: 99, url: unknownUrl }])
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 99,
+      url: unknownUrl,
+      title: "How to — guide"
+    })
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (
+        msg: {
+          type?: string
+          payload?: { flags?: Record<string, unknown>; product?: { retailer?: string; url?: string } }
+        },
+        cb?: (r: unknown) => void
+      ) => {
+        expect(msg.type).toBe("REQUEST_INSIGHT")
+        expect(msg.payload?.flags?.unsupportedDomainDiscovery).toBe(true)
+        expect(msg.payload?.flags?.insightKind).toBe("review_discovery")
+        expect(msg.payload?.product?.retailer).toBe("open_web")
+        expect(msg.payload?.product?.url).toBe(unknownUrl)
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole("button", { name: /^Check Price$/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(chromeMock.runtimeSendMessage).toHaveBeenCalled()
+    })
+    expect(screen.getByText(/Searching the web for reviews and reputation/i)).toBeInTheDocument()
   })
 
   it("requests review discovery and shows source links when Get Review Insight succeeds", async () => {
@@ -401,9 +446,12 @@ describe("SidePanelApp", () => {
   })
 
   it("hides Check Price when the insight source tab is a service site (madmuscles)", async () => {
-    chromeMock.tabsQuery.mockResolvedValue([
-      { id: 77, url: "https://www.madmuscles.com/" }
-    ])
+    chromeMock.tabsQuery.mockResolvedValue([{ id: 77, url: "https://www.madmuscles.com/" }])
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 77,
+      url: "https://www.madmuscles.com/",
+      title: "Madmuscles"
+    })
     chromeMock.tabsSendMessage.mockImplementation(
       (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
         if (typeof cb === "function") {
@@ -430,9 +478,12 @@ describe("SidePanelApp", () => {
   })
 
   it("shows service empty-thread hint when tab is a service site", async () => {
-    chromeMock.tabsQuery.mockResolvedValue([
-      { id: 77, url: "https://www.madmuscles.com/" }
-    ])
+    chromeMock.tabsQuery.mockResolvedValue([{ id: 77, url: "https://www.madmuscles.com/" }])
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 77,
+      url: "https://www.madmuscles.com/",
+      title: "Madmuscles"
+    })
     chromeMock.tabsSendMessage.mockImplementation(
       (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
         if (typeof cb === "function") {

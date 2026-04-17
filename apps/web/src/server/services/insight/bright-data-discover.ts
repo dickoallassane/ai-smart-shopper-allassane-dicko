@@ -44,7 +44,8 @@ export type ExecuteDiscoverOptions = {
 }
 
 /**
- * POST Discover task, then poll GET until `status === "done"` or timeout.
+ * One Discover job: a **single POST** with `query`, `intent`, etc., then **repeated GET** polls
+ * (`?task_id=…`) until Bright Data returns `status === "done"` — not multiple prompt submissions.
  */
 export const executeDiscover = async (
   body: Record<string, unknown>,

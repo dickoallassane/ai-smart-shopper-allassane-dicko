@@ -69,6 +69,36 @@ describe("insightRequestSchema", () => {
     expect(parsed.flags.insightKind).toBe("review_discovery")
     expect(parsed.flags.isServiceSite).toBe(true)
   })
+
+  it("defaults unsupportedDomainDiscovery to false", () => {
+    const parsed = insightRequestSchema.parse({
+      product: validProduct,
+      flags: { llmEnabled: true, pricingBetaEnabled: false }
+    })
+    expect(parsed.flags.unsupportedDomainDiscovery).toBe(false)
+  })
+
+  it("accepts unsupportedDomainDiscovery true for open-web review discovery", () => {
+    const parsed = insightRequestSchema.parse({
+      product: {
+        retailer: "open_web",
+        locale: "en-US",
+        url: "https://example.com/blog/post",
+        title: "Example blog",
+        reviewExcerpts: [],
+        extractedAt: "2026-04-15T12:00:00.000Z"
+      },
+      flags: {
+        llmEnabled: true,
+        pricingBetaEnabled: false,
+        skipAffiliate: true,
+        insightKind: "review_discovery",
+        isServiceSite: false,
+        unsupportedDomainDiscovery: true
+      }
+    })
+    expect(parsed.flags.unsupportedDomainDiscovery).toBe(true)
+  })
 })
 
 describe("insightResponseSchema", () => {

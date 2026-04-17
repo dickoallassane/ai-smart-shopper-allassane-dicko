@@ -7,6 +7,7 @@ import {
 } from '@shopfriend/shared'
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
 import { loadActiveTabSiteHints } from '../lib/active-tab-site-hints'
+import { buildDomainDiscoveryRequest } from '../lib/build-domain-discovery-request'
 import { loadInsightSessionContext } from '../lib/insight-session-context'
 import { requestInsight } from '../lib/request-insight'
 import { SettingsPanel } from './SettingsPanel'
@@ -265,41 +266,59 @@ export const SidePanelApp = () => {
   }
 
   const handleReviewInsight = async () => {
-    const ctx = await loadInsightSessionContext()
-    setInsightSourceIsService(ctx.isServiceSite)
-    const freshPayload = ctx.insightRequest
+    const hints = await loadActiveTabSiteHints()
+    setInsightSourceIsService(hints.isServiceSite)
+    setActiveTabSupported(hints.supportedPage)
 
-    if (!freshPayload) {
-      setMessages((prev) => [
-        ...prev,
-        { id: createId(), role: 'user', text: 'Get review insight for this page.' },
-        {
-          id: createId(),
-          role: 'assistant',
-          kind: 'text',
-          text: 'Open a supported product or service page in this tab first so ShopFriend can read the context.'
+    let payload: InsightRequest | null = null
+    let userPrompt =
+      'Get review insight from the web (Trustpilot, Reddit, YouTube, forums, etc.).'
+
+    if (hints.supportedPage) {
+      const ctx = await loadInsightSessionContext()
+      setInsightSourceIsService(ctx.isServiceSite)
+      if (!ctx.insightRequest) {
+        setMessages((prev) => [
+          ...prev,
+          { id: createId(), role: 'user', text: 'Get review insight for this page.' },
+          {
+            id: createId(),
+            role: 'assistant',
+            kind: 'text',
+            text: 'ShopFriend could not read product context from this tab — try refreshing the page, or open another supported product listing.'
+          }
+        ])
+        return
+      }
+      payload = {
+        ...ctx.insightRequest,
+        flags: {
+          ...ctx.insightRequest.flags,
+          insightKind: 'review_discovery',
+          isServiceSite: ctx.isServiceSite,
+          unsupportedDomainDiscovery: false
         }
-      ])
-      return
+      }
+    } else {
+      const domainPayload = await buildDomainDiscoveryRequest()
+      if (!domainPayload) {
+        setMessages((prev) => [
+          ...prev,
+          { id: createId(), role: 'user', text: 'Get review insight for this page.' },
+          {
+            id: createId(),
+            role: 'assistant',
+            kind: 'text',
+            text: 'Get Review Insight needs a normal web address in this tab — use http(s), not the browser store, settings, or extension pages.'
+          }
+        ])
+        return
+      }
+      payload = domainPayload
+      userPrompt = 'Searching the web for reviews and reputation of this site (by domain).'
     }
 
-    const payload: InsightRequest = {
-      ...freshPayload,
-      flags: {
-        ...freshPayload.flags,
-        insightKind: 'review_discovery',
-        isServiceSite: ctx.isServiceSite
-      }
-    }
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: createId(),
-        role: 'user',
-        text: 'Get review insight from the web (Trustpilot, Reddit, YouTube, forums, etc.).'
-      }
-    ])
+    setMessages((prev) => [...prev, { id: createId(), role: 'user', text: userPrompt }])
     reviewMutation.mutate(payload)
   }
 
@@ -372,7 +391,7 @@ export const SidePanelApp = () => {
                 {messages.length === 0 ? (
                   <p className="sf-text-muted px-1 py-2 text-center">
                     {!activeTabSupported
-                      ? 'No messages yet — open a supported product or service tab in this window, then use the actions below.'
+                      ? 'No messages yet — Get Review Insight can search the web for this tab’s domain. Open a supported store tab to use Check Price or richer on-page product insight.'
                       : insightSourceIsService
                         ? 'No messages yet — use Get Review Insight for web research on this service page.'
                         : 'No messages yet — try Check Price or Get Review Insight on a product tab.'}
@@ -440,7 +459,7 @@ export const SidePanelApp = () => {
 
           <div className="shrink-0 space-y-2 border-t border-sf-outline/10 bg-sf-surface-container-low/60 px-4 py-3">
             <div className="mx-auto flex max-w-xl flex-col gap-2 sm:flex-row">
-              {insightSourceIsService ? null : (
+              {insightSourceIsService || !activeTabSupported ? null : (
                 <button
                   type="button"
                   className="sf-btn-primary flex-1"
@@ -453,7 +472,9 @@ export const SidePanelApp = () => {
               )}
               <button
                 type="button"
-                className={insightSourceIsService ? 'sf-btn-primary flex-1' : 'sf-btn-secondary flex-1'}
+                className={
+                  insightSourceIsService || !activeTabSupported ? 'sf-btn-primary flex-1' : 'sf-btn-secondary flex-1'
+                }
                 onClick={() => void handleReviewInsight()}
                 disabled={reviewMutation.isPending || priceMutation.isPending}
                 aria-busy={reviewMutation.isPending}

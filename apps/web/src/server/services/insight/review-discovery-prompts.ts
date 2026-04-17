@@ -47,6 +47,12 @@ const sourceMixIntent = `Prioritize diverse third-party sources including Trustp
 Focus on authentic user experiences, concrete pros/cons, and verifiable claims where possible.
 Strictly exclude the brand's own marketing landing pages as primary evidence when independent sources exist.`
 
+/** For open-web / unknown-site discovery: keep diversity but force topical overlap with THIS hostname. */
+const domainAnchoredInclude = (hostname: string): string =>
+  `Prioritize pages that clearly discuss "${hostname}" or the same product/program named in the tab title (synonyms only if unambiguous). ` +
+  `Use Trustpilot, Reddit, YouTube, forums, podcasts, or editorials when they mention this site or offering by name. ` +
+  `Strongly down-rank generic articles about online reviews, fake reviews, FTC rules, or consumer-reporting topics that never name "${hostname}".`
+
 const retailSerpTail =
   "reviews pros cons trustpilot reddit youtube"
 
@@ -72,6 +78,23 @@ export const buildReviewDiscoveryPrompts = (
   const domain = hostFromProductUrl(product.url)
   const titlePart = titleSnippetForQuery(product.title, MAX_TITLE_SNIPPET_CHARS)
 
+  if (flags.unsupportedDomainDiscovery) {
+    /** Lead with hostname twice + title so the SERP-style string stays anchored; generic tails alone drift to unrelated “review industry” pages. */
+    const query = buildDiscoverQuery([
+      domain,
+      `${domain} reviews experience`,
+      titlePart,
+      "reddit forum trustpilot scam refund"
+    ])
+    const intent = capIntent(`[ANCHOR]: Rank highest only sources that substantively mention hostname "${domain}" OR the specific offering implied by the tab title. Treat generic guidance about online reviews, FTC enforcement, or “how to spot fake reviews” as low relevance unless "${domain}" appears.
+[CONTEXT]: I am evaluating this exact website before trusting it (ShopFriend has no structured PDP for this tab).
+[INCLUDE]: ${domainAnchoredInclude(domain)}
+[DEPTH]: User satisfaction or complaints about this site/program, scam or legitimacy signals tied to "${domain}", refund or chargeback stories naming this business, and whether third parties call it trustworthy.
+[EXCLUDE]: Thin SEO pages with no named tie to "${domain}"; the site's own marketing as sole evidence when independent discussion exists.`)
+
+    return { query, intent }
+  }
+
   if (flags.isServiceSite) {
     const query = buildDiscoverQuery([
       domain,
@@ -80,7 +103,7 @@ export const buildReviewDiscoveryPrompts = (
     ])
     const intent = capIntent(`[CONTEXT]: I am a shopper evaluating a subscription or service before paying.
 [INCLUDE]: ${sourceMixIntent}
-[DEPTH]: Emphasis on whether the business/domain appears legitimate (not a scam), quality of refund/cancellation/return policy, overall customer satisfaction signals, and whether pricing is considered expensive compared to credible alternatives (value for money).
+[DEPTH]: Emphasis on overall user satisfaction, return/refund/cancellation policy quality, scam or legitimacy red flags, and whether pricing feels fair versus credible alternatives.
 [EXCLUDE]: Generic SEO listicles with no substantive discussion; unmoderated spam pages.`)
 
     return { query, intent }
@@ -108,7 +131,7 @@ export const buildReviewDiscoveryPrompts = (
 
   const intent = capIntent(`[CONTEXT]: I am comparing a physical or digital product before purchase.
 [INCLUDE]: ${sourceMixIntent}
-[DEPTH]: Emphasis on product pros and cons, real-world user satisfaction, recurring complaints or praise, and basic signals about seller or domain reliability (shipping, authenticity, support).
+[DEPTH]: Emphasis on user satisfaction with the product, durability and longevity, real-world use cases, clear pros and cons from owners, plus light signals on seller or domain reliability (shipping, authenticity, support) when relevant.
 [EXCLUDE]: Thin affiliate roundup pages with no user substance; duplicate retailer catalog copy.`)
 
   return { query, intent }
