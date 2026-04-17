@@ -82,4 +82,62 @@ describe("generateInsight", () => {
     expect(result.pricingRows?.length).toBeGreaterThan(0)
     expect(result.pricingRows?.[0]?.label).toBe("Bright Data")
   })
+
+  describe("affiliate product search", () => {
+    const prevKey = process.env.AFFILIATE_NETWORKS_API_KEY
+    const prevBase = process.env.AFFILIATE_NETWORKS_API_BASE_URL
+
+    beforeEach(() => {
+      process.env.AFFILIATE_NETWORKS_API_KEY = "test-affiliate-key"
+      process.env.AFFILIATE_NETWORKS_API_BASE_URL = "https://affiliate-api.test"
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: async () => "",
+          json: async () => ({
+            data: [
+              {
+                id: "offer-a",
+                name: "Matched product title",
+                final_price: 1299,
+                currency: "USD",
+                commission_url: "https://track.test/out",
+                merchant: { name: "Other Store" },
+                network: { name: "Net1" }
+              }
+            ]
+          })
+        })
+      )
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      if (prevKey === undefined) {
+        delete process.env.AFFILIATE_NETWORKS_API_KEY
+      } else {
+        process.env.AFFILIATE_NETWORKS_API_KEY = prevKey
+      }
+      if (prevBase === undefined) {
+        delete process.env.AFFILIATE_NETWORKS_API_BASE_URL
+      } else {
+        process.env.AFFILIATE_NETWORKS_API_BASE_URL = prevBase
+      }
+    })
+
+    it("merges affiliateMatches when Affiliate API returns rows", async () => {
+      const ac = new AbortController()
+      const promise = generateInsight(request(), ac.signal)
+      await vi.advanceTimersByTimeAsync(200)
+      const result = await promise
+      expect(result.affiliateMatches).toHaveLength(1)
+      expect(result.affiliateMatches?.[0]?.merchantName).toBe("Other Store")
+      expect(result.affiliateMatches?.[0]?.clickUrl).toBe("https://track.test/out")
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "https://affiliate-api.test/v1/products",
+        expect.objectContaining({ method: "POST" })
+      )
+    })
+  })
 })

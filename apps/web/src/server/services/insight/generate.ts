@@ -4,6 +4,7 @@ import {
   type InsightResponse
 } from "@shopfriend/shared"
 import { getServerEnv } from "@/lib/env"
+import { searchAffiliateProducts } from "@/server/services/affiliate/searchAffiliateProducts"
 
 const INSIGHT_TIMEOUT_MS = 12_000
 
@@ -122,17 +123,24 @@ export const generateInsight = async (
   signal.addEventListener("abort", onParentAbort)
 
   try {
-    const [llm, pricingRows] = await Promise.all([
+    const [llm, pricingRows, affiliate] = await Promise.all([
       runStubLlm(request, controller.signal),
-      runStubBrightData(request, controller.signal)
+      runStubBrightData(request, controller.signal),
+      searchAffiliateProducts(request, controller.signal)
     ])
+
+    const limitations = [...llm.limitations]
+    if (affiliate.limitation) {
+      limitations.push(affiliate.limitation)
+    }
 
     const merged: InsightResponse = {
       version: "1",
       requestId,
       cards: llm.cards,
       pricingRows,
-      limitations: llm.limitations,
+      affiliateMatches: affiliate.matches?.length ? affiliate.matches : undefined,
+      limitations,
       generatedAt
     }
 

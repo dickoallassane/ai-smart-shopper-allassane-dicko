@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PopupApp } from "./PopupApp"
+import { PRODUCT_PAYLOAD_BY_TAB_ID } from "../lib/pdp-session-storage"
 import { createChromeMock } from "../test-utils/chrome-mock"
 
 const validProduct = {
@@ -31,8 +32,10 @@ const renderPopup = () => {
 describe("PopupApp", () => {
   let chromeMock: ReturnType<typeof createChromeMock>
   let closeSpy: ReturnType<typeof vi.spyOn>
+  let popupSessionValues: Record<string, unknown>
 
   beforeEach(() => {
+    popupSessionValues = {}
     closeSpy = vi.spyOn(window, "close").mockImplementation(() => {})
     chromeMock = createChromeMock()
     chromeMock.install()
@@ -46,6 +49,27 @@ describe("PopupApp", () => {
       }
     )
     chromeMock.tabsQuery.mockResolvedValue([{ id: 42 }])
+    chromeMock.storageSessionGet.mockImplementation(
+      async (keys: string | string[] | Record<string, unknown> | null | undefined) => {
+        const names =
+          keys === null || keys === undefined
+            ? Object.keys(popupSessionValues)
+            : typeof keys === "string"
+              ? [keys]
+              : Array.isArray(keys)
+                ? keys
+                : typeof keys === "object"
+                  ? Object.keys(keys)
+                  : []
+        const out: Record<string, unknown> = {}
+        for (const n of names) {
+          if (Object.prototype.hasOwnProperty.call(popupSessionValues, n)) {
+            out[n] = popupSessionValues[n]
+          }
+        }
+        return out
+      }
+    )
   })
 
   afterEach(() => {
@@ -55,7 +79,6 @@ describe("PopupApp", () => {
   })
 
   it("shows PDP hint when no product payload is in session storage", async () => {
-    chromeMock.storageSessionGet.mockResolvedValue({})
     renderPopup()
     await waitFor(() => {
       expect(screen.getByText(/Open an Amazon product page to attach context/i)).toBeInTheDocument()
@@ -63,9 +86,18 @@ describe("PopupApp", () => {
   })
 
   it("shows invalid payload hint when stored product fails schema", async () => {
-    chromeMock.storageSessionGet.mockResolvedValue({
-      lastProductPayload: { retailer: "amazon", title: "" }
-    })
+    popupSessionValues = {
+      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
+        "42": {
+          retailer: "amazon",
+          locale: "en-US",
+          url: "https://www.amazon.com/dp/B0DZZWMB2L",
+          title: "",
+          extractedAt: "2026-04-15T12:00:00.000Z",
+          reviewExcerpts: []
+        }
+      }
+    }
     renderPopup()
     await waitFor(() => {
       expect(
@@ -75,9 +107,9 @@ describe("PopupApp", () => {
   })
 
   it("shows ready hint when stored product is valid", async () => {
-    chromeMock.storageSessionGet.mockResolvedValue({
-      lastProductPayload: validProduct
-    })
+    popupSessionValues = {
+      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "42": validProduct }
+    }
     renderPopup()
     await waitFor(() => {
       expect(
@@ -88,7 +120,6 @@ describe("PopupApp", () => {
 
   it("opens side panel when Start Now is clicked", async () => {
     const user = userEvent.setup()
-    chromeMock.storageSessionGet.mockResolvedValue({})
     renderPopup()
     await user.click(screen.getByRole("button", { name: /Start Now/i }))
     expect(chromeMock.tabsQuery).toHaveBeenCalled()
@@ -99,7 +130,6 @@ describe("PopupApp", () => {
   })
 
   it("renders hero title and secure badge", async () => {
-    chromeMock.storageSessionGet.mockResolvedValue({})
     renderPopup()
     expect(screen.getByRole("heading", { name: /Need a second opinion/i })).toBeInTheDocument()
     expect(screen.getByText(/Private & secure/i)).toBeInTheDocument()

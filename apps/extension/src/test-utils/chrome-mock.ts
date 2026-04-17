@@ -6,6 +6,7 @@ export type ChromeMock = {
   storageLocalSet: ReturnType<typeof vi.fn>
   runtimeSendMessage: ReturnType<typeof vi.fn>
   tabsQuery: ReturnType<typeof vi.fn>
+  windowsGetCurrent: ReturnType<typeof vi.fn>
   messageListeners: Array<(message: unknown, sender: unknown, sendResponse: (v?: unknown) => void) => boolean | void>
   install: () => void
   remove: () => void
@@ -18,6 +19,7 @@ export const createChromeMock = (): ChromeMock => {
   const storageLocalSet = vi.fn()
   const runtimeSendMessage = vi.fn()
   const tabsQuery = vi.fn()
+  const windowsGetCurrent = vi.fn()
 
   const chromeObj = {
     storage: {
@@ -41,6 +43,9 @@ export const createChromeMock = (): ChromeMock => {
     },
     tabs: {
       query: tabsQuery
+    },
+    windows: {
+      getCurrent: windowsGetCurrent
     }
   }
 
@@ -58,6 +63,7 @@ export const createChromeMock = (): ChromeMock => {
     storageLocalSet,
     runtimeSendMessage,
     tabsQuery,
+    windowsGetCurrent,
     messageListeners,
     install,
     remove

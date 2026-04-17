@@ -18,7 +18,8 @@
     "storage",
     "sidePanel",
     "scripting",
-    "tabs"
+    "tabs",
+    "windows"
   ],
   "host_permissions": [
     "https://www.amazon.com/*",
@@ -27,7 +28,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content-script.ts-loader-CXP9xZV5.js"
+        "assets/content-script.ts-loader-y-sN_uYU.js"
       ],
       "matches": [
         "https://www.amazon.com/*"
@@ -41,8 +42,8 @@
         "https://www.amazon.com/*"
       ],
       "resources": [
-        "assets/insight-contract-BHP7Jkrz.js",
-        "assets/content-script.ts-CT9BCVkU.js"
+        "assets/insight-contract-CN0vUrgd.js",
+        "assets/content-script.ts-DYpZQ3Ob.js"
       ],
       "use_dynamic_url": false
     }

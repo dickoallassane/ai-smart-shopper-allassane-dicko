@@ -1,22 +1,68 @@
 import { useMutation } from '@tanstack/react-query'
-import { insightRequestSchema, type InsightRequest, type InsightResponse } from '@shopfriend/shared'
+import {
+  insightRequestSchema,
+  type AffiliateMatch,
+  type InsightRequest,
+  type InsightResponse
+} from '@shopfriend/shared'
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from 'react'
-import { formatInsightAsAssistantText } from '../lib/format-insight-response'
+import { getStoredProductPayloadForTab, resolveInsightSourceTabId } from '../lib/pdp-session-storage'
 import { requestInsight } from '../lib/request-insight'
 
 const DISPLAY_NAME_KEY = 'extensionDisplayName'
 /** Until auth writes a real name, default shown in the header */
 const DEFAULT_DISPLAY_NAME = 'Guest'
 
-type ChatRole = 'user' | 'assistant'
+const PRICE_MATCH_INTRO = 'Here are few matches I found'
+const NO_AFFILIATE_PRODUCTS = 'No product is found'
 
-type ChatMessage = {
-  id: string
-  role: ChatRole
-  text: string
-}
+type ChatMessage =
+  | { id: string; role: 'user'; text: string }
+  | { id: string; role: 'assistant'; kind: 'text'; text: string }
+  | { id: string; role: 'assistant'; kind: 'price_matches'; intro: string; matches: AffiliateMatch[] }
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+
+const buildCheckPriceUserText = (payload: InsightRequest): string => {
+  const title = payload.product.title
+  const pricePhrase = payload.product.displayedPrice?.trim() || 'the listed price'
+  return `Look for the best prices for this product: ${title} - costing less than ${pricePhrase}`
+}
+
+const buildPriceCheckAssistantMessage = (insight: InsightResponse): ChatMessage => {
+  if (insight.affiliateMatches && insight.affiliateMatches.length > 0) {
+    return {
+      id: createId(),
+      role: 'assistant',
+      kind: 'price_matches',
+      intro: PRICE_MATCH_INTRO,
+      matches: insight.affiliateMatches.slice(0, 2)
+    }
+  }
+  return {
+    id: createId(),
+    role: 'assistant',
+    kind: 'text',
+    text: NO_AFFILIATE_PRODUCTS
+  }
+}
+
+/** Latest PDP payload for the insight source tab (re-read on each Check Price). */
+const loadInsightRequestFromSession = async (): Promise<InsightRequest | null> => {
+  const tabId = await resolveInsightSourceTabId()
+  if (tabId === undefined) {
+    return null
+  }
+  const raw = await getStoredProductPayloadForTab(tabId)
+  if (!raw) {
+    return null
+  }
+  const parsed = insightRequestSchema.safeParse({
+    product: raw,
+    flags: { llmEnabled: true, pricingBetaEnabled: false }
+  })
+  return parsed.success ? parsed.data : null
+}
 
 const appendOnceForInsight = (
   seen: Set<string>,
@@ -27,10 +73,51 @@ const appendOnceForInsight = (
     return
   }
   seen.add(insight.requestId)
-  setMessages((prev) => [
-    ...prev,
-    { id: createId(), role: 'assistant', text: formatInsightAsAssistantText(insight) }
-  ])
+  setMessages((prev) => [...prev, buildPriceCheckAssistantMessage(insight)])
+}
+
+const AffiliateMatchCard = ({ match }: { match: AffiliateMatch }) => {
+  const bodyText = match.description?.trim() || match.productName
+  const priceLine = [match.priceDisplay, match.currency].filter(Boolean).join(' ')
+
+  return (
+    <article className="sf-surface-card-subtle flex flex-col gap-2 rounded-xl p-3">
+      {match.imageUrl ? (
+        <img
+          src={match.imageUrl}
+          alt=""
+          className="mx-auto h-28 w-full max-w-[200px] rounded-lg object-contain"
+          loading="lazy"
+        />
+      ) : null}
+      <p className="text-sm leading-snug text-sf-on-surface">{bodyText}</p>
+      <p className="text-xs text-sf-on-surface-variant">
+        {match.merchantName} — {priceLine}
+      </p>
+      <div className="flex flex-col gap-1.5">
+        <a
+          href={match.clickUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-semibold text-sf-primary underline-offset-2 hover:underline"
+          aria-label="Open affiliate or tracked offer link"
+        >
+          Affiliate / tracked link
+        </a>
+        {match.directUrl ? (
+          <a
+            href={match.directUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-sf-on-surface-variant underline-offset-2 hover:underline"
+            aria-label="View product on retailer site without affiliate redirect"
+          >
+            View on retailer
+          </a>
+        ) : null}
+      </div>
+    </article>
+  )
 }
 
 export const SidePanelApp = () => {
@@ -61,17 +148,7 @@ export const SidePanelApp = () => {
       return
     }
     const loadSession = async () => {
-      const session = (await chrome.storage.session.get('lastProductPayload')) ?? {}
-      const raw = session.lastProductPayload
-      if (!raw) {
-        setRequestPayload(null)
-        return
-      }
-      const parsed = insightRequestSchema.safeParse({
-        product: raw,
-        flags: { llmEnabled: true, pricingBetaEnabled: false }
-      })
-      setRequestPayload(parsed.success ? parsed.data : null)
+      setRequestPayload(await loadInsightRequestFromSession())
     }
     void loadSession()
   }, [hydrated])
@@ -109,26 +186,31 @@ export const SidePanelApp = () => {
     onError: (error: Error) => {
       setMessages((prev) => [
         ...prev,
-        { id: createId(), role: 'assistant', text: `Could not check price: ${error.message}` }
+        { id: createId(), role: 'assistant', kind: 'text', text: `Could not check price: ${error.message}` }
       ])
     }
   })
 
-  const handleCheckPrice = () => {
-    if (!requestPayload) {
+  const handleCheckPrice = async () => {
+    const freshPayload = await loadInsightRequestFromSession()
+    setRequestPayload(freshPayload)
+
+    if (!freshPayload) {
       setMessages((prev) => [
         ...prev,
         { id: createId(), role: 'user', text: 'Check the prices for this product.' },
         {
           id: createId(),
           role: 'assistant',
+          kind: 'text',
           text: 'Open an Amazon product page in this tab first so ShopFriend can read the listing.'
         }
       ])
       return
     }
-    setMessages((prev) => [...prev, { id: createId(), role: 'user', text: 'Check the prices for this product.' }])
-    priceMutation.mutate(requestPayload)
+
+    setMessages((prev) => [...prev, { id: createId(), role: 'user', text: buildCheckPriceUserText(freshPayload) }])
+    priceMutation.mutate(freshPayload)
   }
 
   const handleReviewInsightStub = () => {
@@ -138,6 +220,7 @@ export const SidePanelApp = () => {
       {
         id: createId(),
         role: 'assistant',
+        kind: 'text',
         text: 'Review-focused insights will run here in a future update. For now, use Check Price after opening a PDP.'
       }
     ])
@@ -208,17 +291,32 @@ export const SidePanelApp = () => {
             {messages.length === 0 ? (
               <p className="sf-text-muted px-1 py-2 text-center">No messages yet — try Check Price on a product tab.</p>
             ) : (
-              messages.map((m) =>
-                m.role === 'user' ? (
-                  <div key={m.id} className="sf-chat-user">
-                    {m.text}
-                  </div>
-                ) : (
-                  <div key={m.id} className="sf-chat-assistant">
-                    {m.text}
+              messages.map((m) => {
+                if (m.role === 'user') {
+                  return (
+                    <div key={m.id} className="sf-chat-user">
+                      {m.text}
+                    </div>
+                  )
+                }
+                if (m.kind === 'text') {
+                  return (
+                    <div key={m.id} className="sf-chat-assistant">
+                      {m.text}
+                    </div>
+                  )
+                }
+                return (
+                  <div key={m.id} className="sf-chat-assistant flex flex-col gap-3">
+                    <p className="m-0 text-sm leading-snug">{m.intro}</p>
+                    <div className="flex flex-col gap-3">
+                      {m.matches.map((match) => (
+                        <AffiliateMatchCard key={match.offerId} match={match} />
+                      ))}
+                    </div>
                   </div>
                 )
-              )
+              })
             )}
           </div>
         </div>
@@ -229,7 +327,7 @@ export const SidePanelApp = () => {
           <button
             type="button"
             className="sf-btn-primary flex-1"
-            onClick={handleCheckPrice}
+            onClick={() => void handleCheckPrice()}
             disabled={priceMutation.isPending}
             aria-busy={priceMutation.isPending}
           >

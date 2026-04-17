@@ -95,6 +95,38 @@ describe("insightResponseSchema", () => {
         });
         expect(parsed.pricingRows).toHaveLength(1);
     });
+    it("accepts optional affiliateMatches when valid", () => {
+        const parsed = insightResponseSchema.parse({
+            version: "1",
+            requestId: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+            cards: [
+                {
+                    id: "c",
+                    kind: "reality_check",
+                    title: "T",
+                    bullets: [{ text: "b" }]
+                }
+            ],
+            affiliateMatches: [
+                {
+                    offerId: "offer-1",
+                    productName: "Other tent",
+                    description: "Lightweight 3-person tent",
+                    merchantName: "Example Merchant",
+                    networkName: "Example Network",
+                    priceDisplay: "99.00",
+                    currency: "USD",
+                    clickUrl: "https://example.com/out",
+                    directUrl: "https://example.com/product-direct",
+                    imageUrl: "https://example.com/i.jpg"
+                }
+            ],
+            limitations: [],
+            generatedAt: "2026-04-15T12:00:00.000Z"
+        });
+        expect(parsed.affiliateMatches).toHaveLength(1);
+        expect(parsed.affiliateMatches?.[0]?.merchantName).toBe("Example Merchant");
+    });
 });
 describe("insightErrorBodySchema", () => {
     it("defaults code to INTERNAL when omitted", () => {
