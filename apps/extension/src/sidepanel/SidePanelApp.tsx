@@ -20,6 +20,12 @@ const PRICE_MATCH_INTRO = 'Here are few matches I found'
 const NO_AFFILIATE_PRODUCTS = 'No product is found'
 const REVIEW_INSIGHT_TIMEOUT_MS = 82_000
 
+type ReviewDiscoverySummaryBullet = {
+  text: string
+  /** 0-based index into `results` when the server anchored the bullet to a Discover row */
+  sourceIndex?: number
+}
+
 type ChatMessage =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'assistant'; kind: 'text'; text: string }
@@ -29,6 +35,10 @@ type ChatMessage =
       role: 'assistant'
       kind: 'review_discovery'
       intro: string
+      /** OpenRouter synthesis card (`discover-summary`) when the server had a key and the model returned valid JSON */
+      summaryBullets?: ReviewDiscoverySummaryBullet[]
+      /** When the API skipped or failed synthesis (e.g. missing server key), one limitation line for transparency */
+      synthesisFootnote?: string
       results: ReviewDiscoveryResult[]
     }
 
@@ -43,15 +53,61 @@ const buildCheckPriceUserText = (payload: InsightRequest): string => {
 const isReviewDiscoveryResponse = (insight: InsightResponse): boolean =>
   insight.cards.some((c) => c.id === 'review-discovery-disclaimer')
 
+const DISCOVER_ANCHOR = /^discover:(\d+)$/
+
+const parseDiscoverAnchorHint = (hint: string | undefined): number | undefined => {
+  if (!hint) {
+    return undefined
+  }
+  const m = DISCOVER_ANCHOR.exec(hint.trim())
+  if (!m) {
+    return undefined
+  }
+  const n = Number(m[1])
+  return Number.isInteger(n) && n >= 0 ? n : undefined
+}
+
+const extractReviewDiscoverySummaryBullets = (insight: InsightResponse): ReviewDiscoverySummaryBullet[] => {
+  const card = insight.cards.find((c) => c.id === 'discover-summary')
+  if (!card?.bullets?.length) {
+    return []
+  }
+  return card.bullets.map((b) => ({
+    text: b.text,
+    sourceIndex: parseDiscoverAnchorHint(b.citation?.anchorHint)
+  }))
+}
+
+const pickReviewDiscoverySynthesisFootnote = (insight: InsightResponse): string | undefined => {
+  return insight.limitations.find((l) => {
+    const x = l.toLowerCase()
+    return (
+      l.includes('OPENROUTER_API_KEY') ||
+      x.includes('skipping web summary') ||
+      x.includes('web summary skipped') ||
+      x.includes('openrouter summary json failed')
+    )
+  })
+}
+
 const buildAssistantMessageFromInsight = (insight: InsightResponse): ChatMessage => {
   if (isReviewDiscoveryResponse(insight)) {
     const rows = insight.reviewDiscovery?.results ?? []
     if (rows.length > 0) {
+      const summaryBullets = extractReviewDiscoverySummaryBullets(insight)
+      const synthesisFootnote =
+        summaryBullets.length === 0 ? pickReviewDiscoverySynthesisFootnote(insight) : undefined
+      const intro =
+        summaryBullets.length > 0
+          ? `Here are ${rows.length} ranked web sources (Bright Data Discover). The numbered summary cites entries in the list below — it does not add new links.`
+          : `Here are ${rows.length} ranked web sources (Bright Data Discover).`
       return {
         id: createId(),
         role: 'assistant',
         kind: 'review_discovery',
-        intro: `Here are ${rows.length} ranked web sources (Bright Data Discover).`,
+        intro,
+        summaryBullets: summaryBullets.length > 0 ? summaryBullets : undefined,
+        synthesisFootnote,
         results: rows
       }
     }
@@ -419,6 +475,28 @@ export const SidePanelApp = () => {
                       return (
                         <div key={m.id} className="sf-chat-assistant flex flex-col gap-3">
                           <p className="m-0 text-sm leading-snug">{m.intro}</p>
+                          {m.synthesisFootnote ? (
+                            <p className="m-0 text-xs leading-snug text-sf-on-surface-variant">{m.synthesisFootnote}</p>
+                          ) : null}
+                          {m.summaryBullets?.length ? (
+                            <div className="rounded-xl border border-sf-outline/20 bg-sf-surface-container-low/60 px-3 py-2">
+                              <p className="m-0 mb-2 text-xs font-semibold uppercase tracking-wide text-sf-on-surface-variant">
+                                Summary
+                              </p>
+                              <ul className="m-0 flex list-disc flex-col gap-2 pl-5 text-sm leading-snug">
+                                {m.summaryBullets.map((b, i) => (
+                                  <li key={`${m.id}-sum-${i}`}>
+                                    <span>{b.text}</span>
+                                    {typeof b.sourceIndex === 'number' ? (
+                                      <span className="ml-1 text-xs text-sf-on-surface-variant">
+                                        (source #{b.sourceIndex + 1} below)
+                                      </span>
+                                    ) : null}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
                           <ol className="m-0 flex list-decimal flex-col gap-3 pl-5 text-sm">
                             {m.results.map((r) => (
                               <li key={r.link} className="leading-snug">

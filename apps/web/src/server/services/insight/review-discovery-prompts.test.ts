@@ -29,10 +29,9 @@ describe("buildReviewDiscoveryPrompts", () => {
   })
 
   it("derives ASIN from Amazon-style URL when the payload omits asin", () => {
-    const { asin: _omitAsin, ...productWithoutAsin } = baseProduct
     const req = insightRequestSchema.parse({
       product: {
-        ...productWithoutAsin,
+        ...baseProduct,
         url: "https://www.amazon.com/dp/B0ZZZZZZZZ/ref=something"
       },
       flags: {

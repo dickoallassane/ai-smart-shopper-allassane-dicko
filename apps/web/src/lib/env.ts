@@ -19,7 +19,13 @@ const serverEnvSchema = z.object({
   /** Origin only, e.g. `https://api.example.com` — path `/v1/products` is appended in code */
   AFFILIATE_NETWORKS_API_BASE_URL: z.string().url().optional(),
   /** Optional JSON string: `{ "NETWORK_ID": { "affiliate_id": "…", "sub_id": "…" } }` for request body `networks` */
-  AFFILIATE_NETWORKS_REQUEST_JSON: z.string().optional()
+  AFFILIATE_NETWORKS_REQUEST_JSON: z.string().optional(),
+  /** OpenRouter API key (server-only). Chat completions at `OPENROUTER_BASE_URL` / `chat/completions`. */
+  OPENROUTER_API_KEY: z.string().optional(),
+  /** OpenAI-compatible base URL, e.g. `https://openrouter.ai/api/v1` */
+  OPENROUTER_BASE_URL: z.string().url().optional(),
+  /** Model slug, e.g. `openai/gpt-4o-mini` */
+  OPENROUTER_MODEL: z.string().min(1).max(128).optional()
 })
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>
@@ -35,6 +41,9 @@ export const getServerEnv = (): ServerEnv => {
       pickEnv(process.env.BRIGHT_DATA_API_TOKEN) ?? pickEnv(process.env.BRIGHT_DATA_API_KEY),
     AFFILIATE_NETWORKS_API_KEY: pickEnv(process.env.AFFILIATE_NETWORKS_API_KEY),
     AFFILIATE_NETWORKS_API_BASE_URL: pickEnv(process.env.AFFILIATE_NETWORKS_API_BASE_URL),
-    AFFILIATE_NETWORKS_REQUEST_JSON: pickEnv(process.env.AFFILIATE_NETWORKS_REQUEST_JSON)
+    AFFILIATE_NETWORKS_REQUEST_JSON: pickEnv(process.env.AFFILIATE_NETWORKS_REQUEST_JSON),
+    OPENROUTER_API_KEY: pickEnv(process.env.OPENROUTER_API_KEY),
+    OPENROUTER_BASE_URL: pickEnv(process.env.OPENROUTER_BASE_URL),
+    OPENROUTER_MODEL: pickEnv(process.env.OPENROUTER_MODEL)
   })
 }

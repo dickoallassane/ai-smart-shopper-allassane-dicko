@@ -63,6 +63,37 @@ const mockInsightReviewDiscovery: InsightResponse = {
   generatedAt: "2026-04-15T12:00:00.000Z"
 }
 
+const mockInsightReviewDiscoveryWithSummary: InsightResponse = {
+  ...mockInsightReviewDiscovery,
+  requestId: "e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55",
+  cards: [
+    ...(mockInsightReviewDiscovery.cards ?? []),
+    {
+      id: "discover-summary",
+      kind: "review_themes",
+      title: "Source-grounded summary",
+      bullets: [
+        {
+          text: "Reddit discussion highlights mixed sentiment about the product.",
+          citation: {
+            text: "Reddit thread about product — Mixed reviews here.",
+            anchorHint: "discover:0"
+          }
+        }
+      ]
+    }
+  ]
+}
+
+const mockInsightReviewDiscoveryNoSynthesisKey: InsightResponse = {
+  ...mockInsightReviewDiscovery,
+  requestId: "f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66",
+  limitations: [
+    ...mockInsightReviewDiscovery.limitations,
+    "OPENROUTER_API_KEY is not set; skipping web summary synthesis."
+  ]
+}
+
 const mockInsightWithAffiliate: InsightResponse = {
   version: "1",
   requestId: "c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33",
@@ -274,6 +305,53 @@ describe("SidePanelApp", () => {
       )
     })
     expect(screen.getByText(/ranked web sources/i)).toBeInTheDocument()
+  })
+
+  it("shows Summary block when review discovery response includes discover-summary card", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string; payload?: { flags?: { insightKind?: string } } }, cb?: (r: unknown) => void) => {
+        expect(msg.type).toBe("REQUEST_INSIGHT")
+        expect(msg.payload?.flags?.insightKind).toBe("review_discovery")
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscoveryWithSummary })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/numbered summary cites entries/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/^Summary$/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Reddit discussion highlights mixed sentiment about the product/i)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/source #1 below/i)).toBeInTheDocument()
+  })
+
+  it("shows server footnote when synthesis was skipped (e.g. missing OpenRouter key)", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string }, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscoveryNoSynthesisKey })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/OPENROUTER_API_KEY is not set/i)).toBeInTheDocument()
+    })
   })
 
   it("requests insight and shows price-check user copy when Check Price is clicked with valid session", async () => {

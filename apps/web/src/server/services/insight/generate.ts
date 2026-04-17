@@ -15,73 +15,12 @@ import {
   executeDiscover,
   mapDiscoverItemToReviewResult
 } from "./bright-data-discover"
+import { runPriceCheckLlm, runReviewDiscoverySynthesis } from "./insight-llm"
 import { buildReviewDiscoveryPrompts } from "./review-discovery-prompts"
 
-const INSIGHT_TIMEOUT_MS = 12_000
+/** Affiliate + optional Bright Data can take several seconds; LLM runs after and needs its own budget. */
+const INSIGHT_TIMEOUT_MS = 28_000
 const REVIEW_DISCOVERY_TIMEOUT_MS = 78_000
-
-type LlmResult = Pick<InsightResponse, "cards" | "limitations">
-
-const runStubLlm = async (request: InsightRequest, signal: AbortSignal): Promise<LlmResult> => {
-  if (!request.flags.llmEnabled) {
-    return {
-      cards: [
-        {
-          id: "reality-off",
-          kind: "reality_check" as const,
-          title: "Reality check",
-          bullets: [
-            {
-              text: "LLM is disabled. Enable LLM in settings to generate richer summaries."
-            }
-          ]
-        }
-      ],
-      limitations: ["LLM disabled for this request."]
-    }
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, 120))
-  if (signal.aborted) {
-    throw new Error("aborted")
-  }
-
-  const excerpt = request.product.reviewExcerpts[0]?.slice(0, 160)
-  return {
-    cards: [
-      {
-        id: "reality-check",
-        kind: "reality_check" as const,
-        title: "Reality check (stub)",
-        bullets: [
-          {
-            text: `Grounded stub summary for “${request.product.title.slice(0, 80)}”.`,
-            citation: excerpt
-              ? { text: excerpt, anchorHint: "first-review" }
-              : undefined
-          },
-          {
-            text: "Replace stub with real LLM output validated by Zod before returning."
-          }
-        ]
-      },
-      {
-        id: "returns",
-        kind: "returns" as const,
-        title: "Returns & shipping",
-        bullets: [
-          {
-            text: "Use retailer link-out (R3-A) in product UI; this card is a placeholder."
-          }
-        ]
-      }
-    ],
-    limitations: [
-      "Stub response only — no live model call in this build unless OPENAI_API_KEY is wired (future).",
-      "Always cite on-page excerpts when using a real model."
-    ]
-  }
-}
 
 type PricingResult = NonNullable<InsightResponse["pricingRows"]>
 
@@ -186,12 +125,18 @@ const generateReviewDiscoveryInsight = async (
       results
     }
 
+    const synth = await runReviewDiscoverySynthesis(request, results, signal)
+    const mergedLimitations = [...limitations, ...synth.limitations]
+    const cards = synth.card
+      ? [reviewDiscoveryDisclaimerCard, synth.card]
+      : [reviewDiscoveryDisclaimerCard]
+
     return insightResponseSchema.parse({
       version: "1",
       requestId,
-      cards: [reviewDiscoveryDisclaimerCard],
+      cards,
       reviewDiscovery,
-      limitations,
+      limitations: mergedLimitations,
       generatedAt
     })
   } catch (error) {
@@ -266,13 +211,14 @@ export const generateInsight = async (
   try {
     const skipAffiliate = request.flags.skipAffiliate === true
 
-    const [llm, pricingRows, affiliate] = await Promise.all([
-      runStubLlm(request, controller.signal),
+    const [pricingRows, affiliate] = await Promise.all([
       runStubBrightData(request, controller.signal),
       skipAffiliate
         ? Promise.resolve({} as AffiliateSearchResult)
         : searchAffiliateProducts(request, controller.signal)
     ])
+
+    const llm = await runPriceCheckLlm(request, affiliate, controller.signal)
 
     const limitations = [...llm.limitations]
     if (skipAffiliate) {

@@ -19,17 +19,28 @@ const request = (overrides: Partial<InsightRequest> = {}): InsightRequest =>
       llmEnabled: true,
       pricingBetaEnabled: false,
       skipAffiliate: false,
+      unsupportedDomainDiscovery: false,
+      isServiceSite: false,
+      insightKind: "price_check",
       ...overrides.flags
     }
   })
 
 describe("generateInsight", () => {
+  const prevOpenRouterKey = process.env.OPENROUTER_API_KEY
+
   beforeEach(() => {
     vi.useFakeTimers()
+    delete process.env.OPENROUTER_API_KEY
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    if (prevOpenRouterKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY
+    } else {
+      process.env.OPENROUTER_API_KEY = prevOpenRouterKey
+    }
   })
 
   it("returns response that satisfies insightResponseSchema when LLM is enabled", async () => {
@@ -50,7 +61,8 @@ describe("generateInsight", () => {
           pricingBetaEnabled: false,
           skipAffiliate: false,
           insightKind: "price_check",
-          isServiceSite: false
+          isServiceSite: false,
+          unsupportedDomainDiscovery: false
         }
       }),
       ac.signal
@@ -89,7 +101,8 @@ describe("generateInsight", () => {
           pricingBetaEnabled: true,
           skipAffiliate: false,
           insightKind: "price_check",
-          isServiceSite: false
+          isServiceSite: false,
+          unsupportedDomainDiscovery: false
         }
       }),
       ac.signal
@@ -169,7 +182,8 @@ describe("generateInsight", () => {
             pricingBetaEnabled: false,
             skipAffiliate: true,
             insightKind: "price_check",
-            isServiceSite: false
+            isServiceSite: false,
+            unsupportedDomainDiscovery: false
           }
         }),
         ac.signal
@@ -226,7 +240,8 @@ describe("generateInsight review discovery (Bright Data)", () => {
           pricingBetaEnabled: false,
           skipAffiliate: true,
           insightKind: "review_discovery",
-          isServiceSite: false
+          isServiceSite: false,
+          unsupportedDomainDiscovery: false
         }
       }),
       ac.signal
@@ -235,8 +250,8 @@ describe("generateInsight review discovery (Bright Data)", () => {
     expect(result.reviewDiscovery?.results).toHaveLength(10)
     expect(result.reviewDiscovery?.results?.[0]?.title).toBe("Result 0")
     expect(result.cards.some((c) => c.id === "review-discovery-disclaimer")).toBe(true)
-    expect(globalThis.fetch).toHaveBeenCalled()
-    const postInit = globalThis.fetch.mock.calls[0][1] as { body?: string }
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalled()
+    const postInit = vi.mocked(globalThis.fetch).mock.calls[0][1] as { body?: string }
     const posted = JSON.parse(postInit.body ?? "{}") as Record<string, unknown>
     expect(posted.query).toBeDefined()
     expect(posted.intent).toBeDefined()
@@ -281,7 +296,8 @@ describe("generateInsight review discovery (Bright Data)", () => {
           pricingBetaEnabled: false,
           skipAffiliate: false,
           insightKind: "review_discovery",
-          isServiceSite: false
+          isServiceSite: false,
+          unsupportedDomainDiscovery: false
         }
       }),
       ac.signal
