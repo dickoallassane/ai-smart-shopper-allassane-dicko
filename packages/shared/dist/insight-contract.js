@@ -32,7 +32,9 @@ export const insightCardSchema = z.object({
     id: z.string().max(64),
     kind: z.enum(['reality_check', 'returns', 'review_themes', 'reputation', 'pricing_beta']),
     title: z.string().max(200),
-    bullets: z.array(insightBulletSchema).max(24)
+    bullets: z.array(insightBulletSchema).max(24),
+    /** Short recap of what source types/themes the bullets drew from (Discover synthesis). */
+    sourcesOverview: z.string().max(1000).optional()
 });
 export const pricingRowSchema = z.object({
     label: z.string().max(120),

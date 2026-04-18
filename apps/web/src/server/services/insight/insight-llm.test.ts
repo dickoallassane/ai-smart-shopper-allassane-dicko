@@ -204,6 +204,8 @@ describe("runReviewDiscoverySynthesis", () => {
         { text: "First result looks relevant.", source_index: [0] },
         { text: "Second source adds context.", source_index: [1, 0] }
       ],
+      sources_overview:
+        "Sources 0–1 include forum-style discussion and a second page that adds context; themes focus on relevance and mixed signals.",
       limitations: ["Synthetic test"]
     }
     vi.stubGlobal(
@@ -223,10 +225,12 @@ describe("runReviewDiscoverySynthesis", () => {
     expect(out.card?.id).toBe("discover-summary")
     expect(out.card?.kind).toBe("review_themes")
     expect(out.card?.bullets[0]?.citation?.anchorHint).toBe("discover:0")
+    expect(out.card?.sourcesOverview).toContain("Sources 0–1")
     expect(out.limitations).toContain("Synthetic test")
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1)
   })
 
-  it("returns null when model JSON fails validation", async () => {
+  it("returns null when model JSON fails validation after all retries", async () => {
     process.env.OPENROUTER_API_KEY = "test-or-key"
     vi.stubGlobal(
       "fetch",
@@ -244,5 +248,38 @@ describe("runReviewDiscoverySynthesis", () => {
     )
     expect(out.card).toBeNull()
     expect(out.limitations.some((l) => l.includes("failed validation"))).toBe(true)
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(3)
+  })
+
+  it("retries synthesis and succeeds when a later attempt returns valid JSON", async () => {
+    process.env.OPENROUTER_API_KEY = "test-or-key"
+    const bad = { bullets: [] }
+    const good = {
+      bullets: [{ text: "Recovered on retry.", source_index: [0] }],
+      sources_overview: "Single source (0) summarized after earlier invalid responses.",
+      limitations: []
+    }
+    let calls = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => {
+        calls += 1
+        const payload = calls < 3 ? bad : good
+        return Promise.resolve({
+          ok: true,
+          text: async () => openRouterAssistantBody(JSON.stringify(payload))
+        })
+      })
+    )
+
+    const req = mkReviewRequest()
+    const out = await runReviewDiscoverySynthesis(
+      req,
+      [{ link: "https://a.com/1", title: "A", description: "d" }],
+      new AbortController().signal
+    )
+    expect(out.card?.bullets[0]?.text).toBe("Recovered on retry.")
+    expect(out.card?.sourcesOverview).toContain("Single source")
+    expect(calls).toBe(3)
   })
 })

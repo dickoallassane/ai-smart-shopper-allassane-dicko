@@ -20,6 +20,8 @@ const DEFAULT_OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini"
 const PRICE_CHECK_LLM_TIMEOUT_MS = 18_000
 const REVIEW_SYNTH_LLM_TIMEOUT_MS = 18_000
+/** Initial attempt + 2 retries for Discover summary synthesis */
+const MAX_REVIEW_SYNTH_ATTEMPTS = 3
 
 const llmCardsPayloadSchema = z.object({
   cards: z.array(insightCardSchema).min(1).max(6),
@@ -37,6 +39,8 @@ const discoverySynthesisSchema = z.object({
     )
     .min(1)
     .max(6),
+  /** 2–4 sentences: what source types/themes the bullets summarized (no new URLs). */
+  sources_overview: z.string().max(800).optional(),
   limitations: z.array(z.string().max(500)).max(4).optional()
 })
 
@@ -224,10 +228,12 @@ const buildReviewSynthesisSystemPrompt = (request: InsightRequest): string => {
   return [
     "You summarize Bright Data Discover search results for a browser extension user.",
     "Reply with JSON only:",
-    '{"bullets":[{"text":"string under 900 chars","source_index":[0]}],"limitations":["optional short strings"]}',
+    '{"bullets":[{"text":"string under 900 chars","source_index":[0]}],"sources_overview":"string","limitations":["optional short strings"]}',
     "Each bullet must cite 1–3 integers from source_index matching the provided results[] order (0 = first result).",
     "Every substantive claim must include at least one valid source_index. No new URLs.",
     "3–6 bullets.",
+    "After bullets, include sources_overview: 2–4 short sentences that recap what kinds of themes or source types the bullets summarized (forums, retailers, scam reports, etc.). Reference sources by their list index (0-based) where helpful. No new URLs; do not claim anything not supported by the numbered results.",
+    "Always include sources_overview when you return bullets (non-empty string).",
     depth
   ].join("\n")
 }
@@ -263,11 +269,70 @@ const mapSynthesisToCard = (
     })
     .filter((b): b is InsightBullet => b !== null)
 
+  const overviewTrimmed = parsed.sources_overview?.trim() ?? ""
+  const sourcesOverview =
+    overviewTrimmed.length > 0 ? overviewTrimmed.slice(0, 1000) : undefined
+
   return {
     id: "discover-summary",
     kind: "review_themes",
     title: "Source-grounded summary",
-    bullets: bullets.length > 0 ? bullets : [{ text: "No valid cited bullets returned by the model." }]
+    bullets: bullets.length > 0 ? bullets : [{ text: "No valid cited bullets returned by the model." }],
+    ...(sourcesOverview ? { sourcesOverview } : {})
+  }
+}
+
+type SynthAttemptResult =
+  | { ok: true; card: InsightCard; modelLimitations: string[] }
+  | { ok: false; kind: "zod" | "card" | "runtime"; detail: string }
+
+const runOneReviewSynthAttempt = async (
+  request: InsightRequest,
+  results: ReviewDiscoveryResult[],
+  baseUrl: string,
+  model: string,
+  apiKey: string,
+  signal: AbortSignal,
+  timeoutMs: number
+): Promise<SynthAttemptResult> => {
+  if (signal.aborted) {
+    return { ok: false, kind: "runtime", detail: "Request aborted" }
+  }
+  const timed = withTimeoutSignal(signal, timeoutMs)
+  try {
+    const raw = await openRouterChatCompletionContent({
+      baseUrl,
+      apiKey,
+      model,
+      messages: [
+        { role: "system", content: buildReviewSynthesisSystemPrompt(request) },
+        { role: "user", content: buildReviewSynthesisUserPayload(results) }
+      ],
+      signal: timed,
+      maxTokens: 1200,
+      jsonMode: true
+    })
+
+    const parsedJson: unknown = JSON.parse(raw)
+    const parsed = discoverySynthesisSchema.safeParse(parsedJson)
+    if (!parsed.success) {
+      return { ok: false, kind: "zod", detail: "OpenRouter summary JSON failed validation" }
+    }
+
+    const card = mapSynthesisToCard(parsed.data, results)
+    const cardParsed = insightCardSchema.safeParse(card)
+    if (!cardParsed.success) {
+      return { ok: false, kind: "card", detail: "Summary card failed schema check" }
+    }
+
+    return {
+      ok: true,
+      card: cardParsed.data,
+      modelLimitations: parsed.data.limitations ?? []
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "OpenRouter synthesis failed"
+    return { ok: false, kind: "runtime", detail: msg.slice(0, 240) }
   }
 }
 
@@ -290,43 +355,52 @@ export const runReviewDiscoverySynthesis = async (
 
   const baseUrl = (env.OPENROUTER_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE).replace(/\/$/, "")
   const model = env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL
-  const timed = withTimeoutSignal(signal, REVIEW_SYNTH_LLM_TIMEOUT_MS)
 
-  try {
-    const raw = await openRouterChatCompletionContent({
+  let lastFailure: SynthAttemptResult & { ok: false } | null = null
+
+  for (let attempt = 0; attempt < MAX_REVIEW_SYNTH_ATTEMPTS; attempt++) {
+    if (signal.aborted) {
+      limitations.push("Web summary skipped: request aborted.")
+      return { card: null, limitations }
+    }
+    const timeoutMs = REVIEW_SYNTH_LLM_TIMEOUT_MS * (attempt + 1)
+    const result = await runOneReviewSynthAttempt(
+      request,
+      results,
       baseUrl,
-      apiKey,
       model,
-      messages: [
-        { role: "system", content: buildReviewSynthesisSystemPrompt(request) },
-        { role: "user", content: buildReviewSynthesisUserPayload(results) }
-      ],
-      signal: timed,
-      maxTokens: 1200,
-      jsonMode: true
-    })
-
-    const parsedJson: unknown = JSON.parse(raw)
-    const parsed = discoverySynthesisSchema.safeParse(parsedJson)
-    if (!parsed.success) {
-      limitations.push("OpenRouter summary JSON failed validation; links below are unchanged.")
-      return { card: null, limitations }
+      apiKey,
+      signal,
+      timeoutMs
+    )
+    if (result.ok) {
+      return {
+        card: result.card,
+        limitations: [...limitations, ...result.modelLimitations]
+      }
     }
+    lastFailure = result
+  }
 
-    const card = mapSynthesisToCard(parsed.data, results)
-    const cardParsed = insightCardSchema.safeParse(card)
-    if (!cardParsed.success) {
-      limitations.push("Summary card failed schema check; showing sources only.")
-      return { card: null, limitations }
-    }
-
-    return {
-      card: cardParsed.data,
-      limitations: [...limitations, ...(parsed.data.limitations ?? [])]
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "OpenRouter synthesis failed"
-    limitations.push(`Web summary skipped: ${msg.slice(0, 240)}`)
+  if (lastFailure?.kind === "zod") {
+    limitations.push(
+      `OpenRouter summary JSON failed validation after ${MAX_REVIEW_SYNTH_ATTEMPTS} attempts; links below are unchanged.`
+    )
     return { card: null, limitations }
   }
+  if (lastFailure?.kind === "card") {
+    limitations.push(
+      `Summary card failed schema check after ${MAX_REVIEW_SYNTH_ATTEMPTS} attempts; showing sources only.`
+    )
+    return { card: null, limitations }
+  }
+
+  const detail = lastFailure?.detail ?? "unknown error"
+  limitations.push(
+    `Web summary unavailable after ${MAX_REVIEW_SYNTH_ATTEMPTS} attempts (timeouts T, 2T, 3T): ${detail}`.slice(
+      0,
+      500
+    )
+  )
+  return { card: null, limitations }
 }

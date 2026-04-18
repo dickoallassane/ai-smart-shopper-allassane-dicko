@@ -80,7 +80,9 @@ const mockInsightReviewDiscoveryWithSummary: InsightResponse = {
             anchorHint: "discover:0"
           }
         }
-      ]
+      ],
+      sourcesOverview:
+        "The list centers on one ranked result (0): forum-style discussion with mixed sentiment about the product."
     }
   ]
 }
@@ -332,6 +334,33 @@ describe("SidePanelApp", () => {
       screen.getByText(/Reddit discussion highlights mixed sentiment about the product/i)
     ).toBeInTheDocument()
     expect(screen.getByText(/source #1 below/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/The list centers on one ranked result \(0\): forum-style discussion/i)
+    ).toBeInTheDocument()
+  })
+
+  it("shows sources reminder below thread, centered, outside the chat log", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string }, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("sources-reminder-strip")).toBeInTheDocument()
+    })
+    const strip = screen.getByTestId("sources-reminder-strip")
+    expect(strip).toHaveTextContent(/Bad buzz online is not the whole story/i)
+    expect(strip).toHaveClass("text-center")
+    expect(strip.closest('[role="log"]')).toBeNull()
   })
 
   it("shows server footnote when synthesis was skipped (e.g. missing OpenRouter key)", async () => {

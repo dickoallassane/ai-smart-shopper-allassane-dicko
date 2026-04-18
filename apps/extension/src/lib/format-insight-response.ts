@@ -8,7 +8,11 @@ export const formatInsightAsAssistantText = (insight: InsightResponse): string =
       const cite = b.citation ? `\n  “${b.citation.text}”` : ''
       return `• ${b.text}${cite}`
     })
-    blocks.push(`${card.title}\n${bulletLines.join('\n')}`)
+    const overview =
+      card.sourcesOverview && card.sourcesOverview.trim().length > 0
+        ? `\n\n${card.sourcesOverview.trim()}`
+        : ''
+    blocks.push(`${card.title}\n${bulletLines.join('\n')}${overview}`)
   }
   if (insight.pricingRows && insight.pricingRows.length > 0) {
     const rows = insight.pricingRows.map((r) => `• ${r.label}: ${r.value} (${r.caveat})`)

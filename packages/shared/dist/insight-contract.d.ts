@@ -203,6 +203,8 @@ export declare const insightCardSchema: z.ZodObject<{
             anchorHint?: string | undefined;
         } | undefined;
     }>, "many">;
+    /** Short recap of what source types/themes the bullets drew from (Discover synthesis). */
+    sourcesOverview: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     title: string;
     id: string;
@@ -214,6 +216,7 @@ export declare const insightCardSchema: z.ZodObject<{
             anchorHint?: string | undefined;
         } | undefined;
     }[];
+    sourcesOverview?: string | undefined;
 }, {
     title: string;
     id: string;
@@ -225,6 +228,7 @@ export declare const insightCardSchema: z.ZodObject<{
             anchorHint?: string | undefined;
         } | undefined;
     }[];
+    sourcesOverview?: string | undefined;
 }>;
 export declare const pricingRowSchema: z.ZodObject<{
     label: z.ZodString;
@@ -381,6 +385,8 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }>, "many">;
+        /** Short recap of what source types/themes the bullets drew from (Discover synthesis). */
+        sourcesOverview: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         title: string;
         id: string;
@@ -392,6 +398,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }, {
         title: string;
         id: string;
@@ -403,6 +410,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }>, "many">;
     pricingRows: z.ZodOptional<z.ZodArray<z.ZodObject<{
         label: z.ZodString;
@@ -519,6 +527,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }[];
     limitations: string[];
     generatedAt: string;
@@ -566,6 +575,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }[];
     limitations: string[];
     generatedAt: string;

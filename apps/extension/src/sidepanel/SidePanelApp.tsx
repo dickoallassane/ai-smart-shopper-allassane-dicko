@@ -20,6 +20,10 @@ const PRICE_MATCH_INTRO = 'Here are few matches I found'
 const NO_AFFILIATE_PRODUCTS = 'No product is found'
 const REVIEW_INSIGHT_TIMEOUT_MS = 82_000
 
+/** Shown centered below the latest thread message (not inside the live region). */
+const SHOPFRIEND_SOURCES_REMINDER =
+  'Bad buzz online is not the whole story. Open several sources below before you decide.'
+
 type ReviewDiscoverySummaryBullet = {
   text: string
   /** 0-based index into `results` when the server anchored the bullet to a Discover row */
@@ -39,6 +43,8 @@ type ChatMessage =
       summaryBullets?: ReviewDiscoverySummaryBullet[]
       /** When the API skipped or failed synthesis (e.g. missing server key), one limitation line for transparency */
       synthesisFootnote?: string
+      /** Model-written recap below Summary bullets (`discover-summary.sourcesOverview`) */
+      summarySourcesOverview?: string
       results: ReviewDiscoveryResult[]
     }
 
@@ -78,6 +84,12 @@ const extractReviewDiscoverySummaryBullets = (insight: InsightResponse): ReviewD
   }))
 }
 
+const extractReviewDiscoverySourcesOverview = (insight: InsightResponse): string | undefined => {
+  const card = insight.cards.find((c) => c.id === 'discover-summary')
+  const t = card?.sourcesOverview?.trim()
+  return t && t.length > 0 ? t : undefined
+}
+
 const pickReviewDiscoverySynthesisFootnote = (insight: InsightResponse): string | undefined => {
   return insight.limitations.find((l) => {
     const x = l.toLowerCase()
@@ -85,7 +97,8 @@ const pickReviewDiscoverySynthesisFootnote = (insight: InsightResponse): string 
       l.includes('OPENROUTER_API_KEY') ||
       x.includes('skipping web summary') ||
       x.includes('web summary skipped') ||
-      x.includes('openrouter summary json failed')
+      x.includes('openrouter summary json failed') ||
+      x.includes('unavailable after')
     )
   })
 }
@@ -95,8 +108,10 @@ const buildAssistantMessageFromInsight = (insight: InsightResponse): ChatMessage
     const rows = insight.reviewDiscovery?.results ?? []
     if (rows.length > 0) {
       const summaryBullets = extractReviewDiscoverySummaryBullets(insight)
-      const synthesisFootnote =
-        summaryBullets.length === 0 ? pickReviewDiscoverySynthesisFootnote(insight) : undefined
+      const summarySourcesOverview = extractReviewDiscoverySourcesOverview(insight)
+      const hasSummaryBody =
+        summaryBullets.length > 0 || Boolean(summarySourcesOverview && summarySourcesOverview.length > 0)
+      const synthesisFootnote = hasSummaryBody ? undefined : pickReviewDiscoverySynthesisFootnote(insight)
       const intro =
         summaryBullets.length > 0
           ? `Here are ${rows.length} ranked web sources (Bright Data Discover). The numbered summary cites entries in the list below — it does not add new links.`
@@ -107,6 +122,7 @@ const buildAssistantMessageFromInsight = (insight: InsightResponse): ChatMessage
         kind: 'review_discovery',
         intro,
         summaryBullets: summaryBullets.length > 0 ? summaryBullets : undefined,
+        summarySourcesOverview,
         synthesisFootnote,
         results: rows
       }
@@ -478,23 +494,30 @@ export const SidePanelApp = () => {
                           {m.synthesisFootnote ? (
                             <p className="m-0 text-xs leading-snug text-sf-on-surface-variant">{m.synthesisFootnote}</p>
                           ) : null}
-                          {m.summaryBullets?.length ? (
+                          {m.summaryBullets?.length || m.summarySourcesOverview?.trim() ? (
                             <div className="rounded-xl border border-sf-outline/20 bg-sf-surface-container-low/60 px-3 py-2">
                               <p className="m-0 mb-2 text-xs font-semibold uppercase tracking-wide text-sf-on-surface-variant">
                                 Summary
                               </p>
-                              <ul className="m-0 flex list-disc flex-col gap-2 pl-5 text-sm leading-snug">
-                                {m.summaryBullets.map((b, i) => (
-                                  <li key={`${m.id}-sum-${i}`}>
-                                    <span>{b.text}</span>
-                                    {typeof b.sourceIndex === 'number' ? (
-                                      <span className="ml-1 text-xs text-sf-on-surface-variant">
-                                        (source #{b.sourceIndex + 1} below)
-                                      </span>
-                                    ) : null}
-                                  </li>
-                                ))}
-                              </ul>
+                              {m.summaryBullets?.length ? (
+                                <ul className="m-0 flex list-disc flex-col gap-2 pl-5 text-sm leading-snug">
+                                  {m.summaryBullets.map((b, i) => (
+                                    <li key={`${m.id}-sum-${i}`}>
+                                      <span>{b.text}</span>
+                                      {typeof b.sourceIndex === 'number' ? (
+                                        <span className="ml-1 text-xs text-sf-on-surface-variant">
+                                          (source #{b.sourceIndex + 1} below)
+                                        </span>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                              {m.summarySourcesOverview?.trim() ? (
+                                <p className="mb-0 mt-2 text-sm leading-snug text-sf-on-surface-variant">
+                                  {m.summarySourcesOverview.trim()}
+                                </p>
+                              ) : null}
                             </div>
                           ) : null}
                           <ol className="m-0 flex list-decimal flex-col gap-3 pl-5 text-sm">
@@ -535,6 +558,15 @@ export const SidePanelApp = () => {
                   })
                 )}
               </div>
+              {messages.length > 0 ? (
+                <p
+                  className="mx-auto max-w-sm px-2 py-2 text-center text-xs leading-snug text-sf-on-surface-variant"
+                  data-testid="sources-reminder-strip"
+                  aria-label="Reminder to verify information using multiple sources"
+                >
+                  {SHOPFRIEND_SOURCES_REMINDER}
+                </p>
+              ) : null}
             </div>
           </div>
 
