@@ -90,7 +90,7 @@ describe("runPriceCheckLlm", () => {
     await vi.advanceTimersByTimeAsync(150)
     const result = await p
     expect(result.cards.some((c) => c.id === "reality-check")).toBe(true)
-    expect(result.limitations.some((l) => l.includes("OPENROUTER_API_KEY"))).toBe(true)
+    expect(result.limitations.some((l) => l.includes("Summary service is not configured"))).toBe(true)
   })
 
   it("returns model cards when OpenRouter returns valid JSON", async () => {
@@ -138,7 +138,7 @@ describe("runPriceCheckLlm", () => {
     await vi.advanceTimersByTimeAsync(150)
     const result = await p
     expect(result.cards.some((c) => c.id === "reality-check")).toBe(true)
-    expect(result.limitations.some((l) => l.includes("failed validation"))).toBe(true)
+    expect(result.limitations.some((l) => l.includes("did not match the expected format"))).toBe(true)
   })
 
   it("falls back to stub when fetch rejects (e.g. aborted)", async () => {
@@ -154,7 +154,7 @@ describe("runPriceCheckLlm", () => {
     await vi.advanceTimersByTimeAsync(150)
     const result = await p
     expect(result.cards.some((c) => c.id === "reality-check")).toBe(true)
-    expect(result.limitations.some((l) => l.includes("OpenRouter error"))).toBe(true)
+    expect(result.limitations.some((l) => l.includes("Server error while generating summary"))).toBe(true)
   })
 })
 
@@ -194,7 +194,7 @@ describe("runReviewDiscoverySynthesis", () => {
       new AbortController().signal
     )
     expect(out.card).toBeNull()
-    expect(out.limitations.some((l) => l.includes("OPENROUTER_API_KEY"))).toBe(true)
+    expect(out.limitations.some((l) => l.includes("Summary service is not configured"))).toBe(true)
   })
 
   it("maps valid synthesis JSON to a review_themes card with discover citations", async () => {
@@ -247,7 +247,7 @@ describe("runReviewDiscoverySynthesis", () => {
       new AbortController().signal
     )
     expect(out.card).toBeNull()
-    expect(out.limitations.some((l) => l.includes("failed validation"))).toBe(true)
+    expect(out.limitations.some((l) => l.includes("did not match the expected format"))).toBe(true)
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(3)
   })
 

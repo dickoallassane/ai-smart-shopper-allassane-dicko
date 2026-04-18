@@ -10,15 +10,24 @@ import {
   searchAffiliateProducts,
   type AffiliateSearchResult
 } from "@/server/services/affiliate/searchAffiliateProducts"
-import {
-  DiscoverHttpError,
-  executeDiscover,
-  mapDiscoverItemToReviewResult
-} from "./bright-data-discover"
+import { DiscoverHttpError, executeDiscover, mapDiscoverItemToReviewResult } from "./bright-data-discover"
+import { formatInsightNetworkError } from "./format-insight-network-error"
 import { runPriceCheckLlm, runReviewDiscoverySynthesis } from "./insight-llm"
 import { buildReviewDiscoveryPrompts } from "./review-discovery-prompts"
+import {
+  OPENWEB_ADVICE_DISCLAIMER,
+  RESEARCH_DISCLAIMER_CARD_TITLE,
+  serverResearchBadRequest,
+  serverResearchUpstream,
+  SERVER_FEATURE_NOT_AVAILABLE,
+  SERVER_RATE_LIMITED,
+  SERVER_RESEARCH_AUTH_FAILED,
+  WEB_RESEARCH_CANCELLED_OR_TIMED_OUT,
+  WEB_RESEARCH_NOT_CONFIGURED,
+  WEB_RESEARCH_UNKNOWN_FAILURE
+} from "./user-facing-messages"
 
-/** Affiliate + optional Bright Data can take several seconds; LLM runs after and needs its own budget. */
+/** Affiliate + optional pricing research can take several seconds; summary step has its own budget. */
 const INSIGHT_TIMEOUT_MS = 28_000
 const REVIEW_DISCOVERY_TIMEOUT_MS = 78_000
 
@@ -36,11 +45,11 @@ const runStubBrightData = async (
   if (!env.BRIGHT_DATA_API_TOKEN) {
     return [
       {
-        label: "Bright Data",
+        label: "Research provider",
         value: "not configured",
-        sourceUrl: "https://docs.brightdata.com/",
+        sourceUrl: request.product.url,
         fetchedAt: new Date().toISOString(),
-        caveat: "BRIGHT_DATA_API_TOKEN missing — stub row for wiring verification."
+        caveat: "Pricing research token missing on server — stub row for wiring verification."
       }
     ]
   }
@@ -56,7 +65,7 @@ const runStubBrightData = async (
       value: request.product.displayedPrice ?? "n/a",
       sourceUrl: request.product.url,
       fetchedAt: new Date().toISOString(),
-      caveat: "Vendor pipeline not implemented — replace with real Bright Data mapping."
+      caveat: "Vendor pipeline not implemented — replace with real pricing research mapping."
     }
   ]
 }
@@ -64,7 +73,7 @@ const runStubBrightData = async (
 const reviewDiscoveryDisclaimerCard = {
   id: "review-discovery-disclaimer",
   kind: "reputation" as const,
-  title: "Web research (Bright Data Discover)",
+  title: RESEARCH_DISCLAIMER_CARD_TITLE,
   bullets: [
     {
       text: "These links are ranked third-party web results, not verified facts. Treat as starting points for your own judgment."
@@ -86,15 +95,13 @@ const generateReviewDiscoveryInsight = async (
       version: "1",
       requestId,
       cards: [reviewDiscoveryDisclaimerCard],
-      limitations: [
-        "Bright Data is not configured. Set BRIGHT_DATA_API_TOKEN or BRIGHT_DATA_API_KEY on the server."
-      ],
+      limitations: [WEB_RESEARCH_NOT_CONFIGURED],
       generatedAt
     })
   }
 
   const { query, intent } = buildReviewDiscoveryPrompts(request)
-  /** Only fields documented in Bright Data Discover examples — extra keys return 400. */
+  /** Only fields documented for the Discover API — extra keys can return 400 upstream. */
   const discoverBody: Record<string, unknown> = {
     query,
     intent,
@@ -103,9 +110,7 @@ const generateReviewDiscoveryInsight = async (
     format: "json"
   }
 
-  const limitations: string[] = [
-    "Third-party opinions from the open web only — not financial, legal, or medical advice."
-  ]
+  const limitations: string[] = [OPENWEB_ADVICE_DISCLAIMER]
 
   try {
     const rawItems = await executeDiscover(discoverBody, token, signal, {
@@ -142,35 +147,25 @@ const generateReviewDiscoveryInsight = async (
   } catch (error) {
     if (error instanceof DiscoverHttpError) {
       if (error.status === 401) {
-        limitations.push("Bright Data rejected the API key (401). Check BRIGHT_DATA_API_TOKEN / BRIGHT_DATA_API_KEY.")
+        limitations.push(SERVER_RESEARCH_AUTH_FAILED)
       } else if (error.status === 403) {
-        limitations.push(
-          "Bright Data Discover may not be enabled for this account (403). Contact Bright Data support to enable Discover."
-        )
+        limitations.push(SERVER_FEATURE_NOT_AVAILABLE)
       } else if (error.status === 429) {
-        limitations.push("Bright Data rate limit (429). Try again in a few minutes.")
+        limitations.push(SERVER_RATE_LIMITED)
       } else if (error.status === 400) {
         const detail = error.responseBody?.trim() ?? ""
-        const line =
-          detail.length > 0
-            ? `Bright Data rejected the request (400): ${detail}`
-            : "Bright Data rejected the request (400). Check query length and supported body parameters."
-        limitations.push(line.slice(0, 500))
+        limitations.push(serverResearchBadRequest(detail))
       } else {
         const detail = error.responseBody?.trim() ?? ""
-        const line =
-          detail.length > 0
-            ? `Bright Data request failed (${error.status}): ${detail}`
-            : `Bright Data request failed (${error.status}).`
-        limitations.push(line.slice(0, 500))
+        limitations.push(serverResearchUpstream(error.status, detail))
       }
     } else if (error instanceof DOMException && error.name === "AbortError") {
-      limitations.push("Review discovery was cancelled or timed out.")
+      limitations.push(WEB_RESEARCH_CANCELLED_OR_TIMED_OUT)
       throw error
     } else if (error instanceof Error) {
-      limitations.push(error.message)
+      limitations.push(formatInsightNetworkError(error))
     } else {
-      limitations.push("Review discovery failed with an unknown error.")
+      limitations.push(WEB_RESEARCH_UNKNOWN_FAILURE)
     }
 
     return insightResponseSchema.parse({

@@ -11,6 +11,17 @@ import {
 } from "../lib/site-extractor-config"
 import { createChromeMock } from "../test-utils/chrome-mock"
 
+const { requestInsightChatMock } = vi.hoisted(() => ({
+  requestInsightChatMock: vi.fn().mockResolvedValue({
+    reply: "Stub chat assistant reply.",
+    requestId: "11111111-1111-4111-8111-111111111111"
+  })
+}))
+
+vi.mock("../lib/request-insight-chat", () => ({
+  requestInsightChat: requestInsightChatMock
+}))
+
 const validProduct = {
   retailer: "amazon" as const,
   locale: "en-US",
@@ -43,7 +54,7 @@ const mockInsightReviewDiscovery: InsightResponse = {
     {
       id: "review-discovery-disclaimer",
       kind: "reputation",
-      title: "Web research (Bright Data Discover)",
+      title: "Web research",
       bullets: [{ text: "Third-party web results — not verified facts." }]
     }
   ],
@@ -92,7 +103,7 @@ const mockInsightReviewDiscoveryNoSynthesisKey: InsightResponse = {
   requestId: "f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66",
   limitations: [
     ...mockInsightReviewDiscovery.limitations,
-    "OPENROUTER_API_KEY is not set; skipping web summary synthesis."
+    "Summary service is not configured; web summary was skipped."
   ]
 }
 
@@ -154,6 +165,7 @@ describe("SidePanelApp", () => {
   let stored: Record<string, unknown>
 
   beforeEach(() => {
+    requestInsightChatMock.mockClear()
     stored = {}
     chromeMock = createChromeMock()
     chromeMock.install()
@@ -236,10 +248,10 @@ describe("SidePanelApp", () => {
     })
   })
 
-  it("renders disabled chat composer", async () => {
+  it("renders disabled chat composer until research context exists", async () => {
     renderSidePanel()
     await waitFor(() => {
-      expect(screen.getByLabelText(/Message \(disabled\)/i)).toBeDisabled()
+      expect(screen.getByPlaceholderText(/Run Get Review Insight first/i)).toBeDisabled()
     })
   })
 
@@ -339,6 +351,42 @@ describe("SidePanelApp", () => {
     ).toBeInTheDocument()
   })
 
+  it("enables chat after review insight and calls requestInsightChat on Send", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string }, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Reddit thread about product/i })).toBeInTheDocument()
+    })
+    const chatInput = screen.getByPlaceholderText(/Ask about the sources/i)
+    expect(chatInput).not.toBeDisabled()
+    await user.type(chatInput, "Should I trust the first link?")
+    await user.click(screen.getByRole("button", { name: "Send chat message" }))
+    await waitFor(() => {
+      expect(requestInsightChatMock).toHaveBeenCalledTimes(1)
+    })
+    const arg = requestInsightChatMock.mock.calls[0]![0] as {
+      userMessage: string
+      researchContext: { reviewDiscovery: { results: unknown[] } }
+    }
+    expect(arg.userMessage).toBe("Should I trust the first link?")
+    expect(arg.researchContext.reviewDiscovery.results.length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(screen.getByText("Stub chat assistant reply.")).toBeInTheDocument()
+    })
+  })
+
   it("shows sources reminder below thread, centered, outside the chat log", async () => {
     const user = userEvent.setup()
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
@@ -363,7 +411,7 @@ describe("SidePanelApp", () => {
     expect(strip.closest('[role="log"]')).toBeNull()
   })
 
-  it("shows server footnote when synthesis was skipped (e.g. missing OpenRouter key)", async () => {
+  it("shows server footnote when synthesis was skipped (e.g. missing summary service)", async () => {
     const user = userEvent.setup()
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     chromeMock.runtimeSendMessage.mockImplementation(
@@ -379,7 +427,7 @@ describe("SidePanelApp", () => {
     })
     await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
     await waitFor(() => {
-      expect(screen.getByText(/OPENROUTER_API_KEY is not set/i)).toBeInTheDocument()
+      expect(screen.getByText(/Summary service is not configured/i)).toBeInTheDocument()
     })
   })
 

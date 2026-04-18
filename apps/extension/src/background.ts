@@ -1,4 +1,10 @@
-import type { InsightRequest, InsightResponse, ProductPayload } from '@shopfriend/shared'
+import type {
+  ChatTurnRequest,
+  ChatTurnResponse,
+  InsightRequest,
+  InsightResponse,
+  ProductPayload
+} from '@shopfriend/shared'
 import { PRODUCT_PAYLOAD_BY_TAB_ID, mergeProductPayloadForTab, type ProductPayloadByTabId } from './lib/pdp-session-storage'
 import {
   defaultSiteExtractorConfigJson,
@@ -26,6 +32,31 @@ const getApiBase = (): string => {
     return resolveApiBase()
   }
   return resolveApiBase()
+}
+
+const fetchInsightChat = async (
+  body: ChatTurnRequest,
+  accessToken: string | undefined,
+  signal: AbortSignal
+): Promise<ChatTurnResponse> => {
+  const base = getApiBase()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  }
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`
+  }
+  const response = await fetch(`${base}/api/insight/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || `Chat failed (${response.status})`)
+  }
+  return (await response.json()) as ChatTurnResponse
 }
 
 const fetchInsight = async (
@@ -182,6 +213,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           /* no listeners */
         }
         sendResponse({ ok: true as const, insight })
+      } catch (error) {
+        const err = error instanceof Error ? error.message : 'Unknown error'
+        sendResponse({ ok: false as const, error: err })
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+
+    void run()
+    return true
+  }
+
+  if (message?.type === 'REQUEST_INSIGHT_CHAT') {
+    const controller = new AbortController()
+    const timeoutMs = typeof message.timeoutMs === 'number' ? message.timeoutMs : 64_000
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+    const run = async () => {
+      try {
+        const stored = await chrome.storage.local.get(['extensionAccessToken'])
+        const accessToken = stored.extensionAccessToken as string | undefined
+        const data = await fetchInsightChat(
+          message.payload as ChatTurnRequest,
+          accessToken,
+          controller.signal
+        )
+        sendResponse({ ok: true as const, data })
       } catch (error) {
         const err = error instanceof Error ? error.message : 'Unknown error'
         sendResponse({ ok: false as const, error: err })

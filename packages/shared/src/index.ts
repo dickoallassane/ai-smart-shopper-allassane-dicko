@@ -25,3 +25,17 @@ export {
   type ReviewDiscovery,
   type ReviewDiscoveryResult
 } from './insight-contract'
+
+export {
+  chatHistoryTurnSchema,
+  chatReplyFromModelSchema,
+  chatResearchContextSchema,
+  chatSummaryBulletPayloadSchema,
+  chatTurnRequestSchema,
+  chatTurnResponseSchema,
+  type ChatHistoryTurn,
+  type ChatReplyFromModel,
+  type ChatResearchContext,
+  type ChatTurnRequest,
+  type ChatTurnResponse
+} from './insight-chat-contract'

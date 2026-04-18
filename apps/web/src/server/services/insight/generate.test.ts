@@ -70,7 +70,7 @@ describe("generateInsight", () => {
     await vi.advanceTimersByTimeAsync(50)
     const result = await promise
     expect(result.cards.some((c) => c.id === "reality-off")).toBe(true)
-    expect(result.limitations.some((l) => l.includes("LLM disabled"))).toBe(true)
+    expect(result.limitations.some((l) => l.includes("Summaries are disabled"))).toBe(true)
   })
 
   it("includes citation from first review excerpt when LLM is enabled", async () => {
@@ -92,7 +92,7 @@ describe("generateInsight", () => {
     await rejection
   })
 
-  it("includes pricingRows stub when pricingBetaEnabled and no Bright Data token", async () => {
+  it("includes pricingRows stub when pricingBetaEnabled and no research token", async () => {
     const ac = new AbortController()
     const promise = generateInsight(
       request({
@@ -110,7 +110,7 @@ describe("generateInsight", () => {
     await vi.advanceTimersByTimeAsync(200)
     const result = await promise
     expect(result.pricingRows?.length).toBeGreaterThan(0)
-    expect(result.pricingRows?.[0]?.label).toBe("Bright Data")
+    expect(result.pricingRows?.[0]?.label).toBe("Research provider")
   })
 
   describe("affiliate product search", () => {
@@ -198,7 +198,7 @@ describe("generateInsight", () => {
   })
 })
 
-describe("generateInsight review discovery (Bright Data)", () => {
+describe("generateInsight review discovery (web research)", () => {
   const prevBright = process.env.BRIGHT_DATA_API_TOKEN
 
   afterEach(() => {
@@ -257,6 +257,38 @@ describe("generateInsight review discovery (Bright Data)", () => {
     expect(posted.intent).toBeDefined()
     expect(posted.dedupe).toBeUndefined()
     expect(posted.include_content).toBeUndefined()
+  })
+
+  it("returns a neutral limitation when upstream research returns HTTP 401", async () => {
+    process.env.BRIGHT_DATA_API_TOKEN = "test-bright-token"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: async () => "Unauthorized"
+      })
+    )
+
+    const ac = new AbortController()
+    const result = await generateInsight(
+      request({
+        flags: {
+          llmEnabled: false,
+          pricingBetaEnabled: false,
+          skipAffiliate: true,
+          insightKind: "review_discovery",
+          isServiceSite: false,
+          unsupportedDomainDiscovery: false
+        }
+      }),
+      ac.signal
+    )
+
+    expect(result.limitations.some((l) => l.includes("research authentication"))).toBe(true)
+    expect(
+      result.limitations.some((l) => l.toLowerCase().includes("bright data"))
+    ).toBe(false)
   })
 
   it("does not call affiliate search for review_discovery", async () => {

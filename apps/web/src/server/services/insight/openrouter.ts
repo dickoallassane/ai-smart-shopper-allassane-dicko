@@ -58,8 +58,8 @@ export const openRouterChatCompletionContent = async ({
     const preview = rawText.trim().slice(0, 400)
     throw new Error(
       preview.length > 0
-        ? `OpenRouter HTTP ${res.status}: ${preview}`
-        : `OpenRouter HTTP ${res.status} (empty body)`
+        ? `Summary service HTTP ${res.status}: ${preview}`
+        : `Summary service HTTP ${res.status} (empty body)`
     )
   }
 
@@ -67,19 +67,19 @@ export const openRouterChatCompletionContent = async ({
   try {
     parsed = JSON.parse(rawText) as unknown
   } catch {
-    throw new Error("OpenRouter returned non-JSON body")
+    throw new Error("Summary service returned non-JSON body")
   }
 
   const rootObj = parsed as Record<string, unknown>
   const choices = rootObj.choices
   if (!Array.isArray(choices) || choices.length === 0) {
-    throw new Error("OpenRouter response missing choices")
+    throw new Error("Summary service response missing choices")
   }
   const first = choices[0] as Record<string, unknown>
   const message = first.message as Record<string, unknown> | undefined
   const content = message?.content
   if (typeof content !== "string" || content.trim().length === 0) {
-    throw new Error("OpenRouter response missing assistant content")
+    throw new Error("Summary service response missing assistant content")
   }
   return content.trim()
 }

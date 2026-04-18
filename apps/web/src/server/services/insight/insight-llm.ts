@@ -10,6 +10,21 @@ import { z } from "zod"
 import { getServerEnv } from "@/lib/env"
 import type { AffiliateSearchResult } from "@/server/services/affiliate/searchAffiliateProducts"
 import { openRouterChatCompletionContent } from "./openrouter"
+import {
+  PRICE_JSON_VALIDATION_FAILED,
+  PRICE_MISSING_KEY_LIMITATION,
+  PRICE_STUB_CONFIGURE_SERVER,
+  PRICE_STUB_LIMITATIONS,
+  PRICE_STUB_PLACEHOLDER_RETURNS,
+  PRICE_SUMMARY_DISABLED,
+  PRICE_SUMMARY_DISABLED_LIMITATION,
+  priceSummaryRuntime,
+  REVIEW_SYNTH_ABORTED,
+  REVIEW_SYNTH_CARD_SCHEMA_FAILED,
+  REVIEW_SYNTH_KEY_MISSING,
+  REVIEW_SYNTH_RUNTIME_FAILED,
+  REVIEW_SYNTH_VALIDATION_FAILED
+} from "./user-facing-messages"
 
 type InsightBullet = z.infer<typeof insightBulletSchema>
 type InsightCard = z.infer<typeof insightCardSchema>
@@ -73,12 +88,12 @@ const runStubPriceCheckLlm = async (request: InsightRequest, signal: AbortSignal
           title: "Reality check",
           bullets: [
             {
-              text: "LLM is disabled. Enable LLM in settings to generate richer summaries."
+              text: PRICE_SUMMARY_DISABLED
             }
           ]
         }
       ],
-      limitations: ["LLM disabled for this request."]
+      limitations: [PRICE_SUMMARY_DISABLED_LIMITATION]
     }
   }
 
@@ -100,7 +115,7 @@ const runStubPriceCheckLlm = async (request: InsightRequest, signal: AbortSignal
             citation: excerpt ? { text: excerpt, anchorHint: "first-review" } : undefined
           },
           {
-            text: "Set OPENROUTER_API_KEY on the server to replace this stub with live OpenRouter summaries."
+            text: PRICE_STUB_CONFIGURE_SERVER
           }
         ]
       },
@@ -110,15 +125,12 @@ const runStubPriceCheckLlm = async (request: InsightRequest, signal: AbortSignal
         title: "Returns & shipping",
         bullets: [
           {
-            text: "Use retailer link-out in product UI; this card is a placeholder until LLM is configured."
+            text: PRICE_STUB_PLACEHOLDER_RETURNS
           }
         ]
       }
     ],
-    limitations: [
-      "Stub response — configure OPENROUTER_API_KEY for live OpenRouter commentary.",
-      "Always cite on-page excerpts when the live model runs."
-    ]
+    limitations: [...PRICE_STUB_LIMITATIONS]
   }
 }
 
@@ -174,7 +186,7 @@ export const runPriceCheckLlm = async (
     const stub = await runStubPriceCheckLlm(request, signal)
     return {
       ...stub,
-      limitations: [...stub.limitations, "OPENROUTER_API_KEY is not set; using stub LLM output."]
+      limitations: [...stub.limitations, PRICE_MISSING_KEY_LIMITATION]
     }
   }
 
@@ -202,16 +214,16 @@ export const runPriceCheckLlm = async (
       const stub = await runStubPriceCheckLlm(request, signal)
       return {
         ...stub,
-        limitations: [...stub.limitations, "OpenRouter returned JSON that failed validation; showing stub cards."]
+        limitations: [...stub.limitations, PRICE_JSON_VALIDATION_FAILED]
       }
     }
     return { cards: parsed.data.cards, limitations: parsed.data.limitations }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "OpenRouter request failed"
+    const msg = e instanceof Error ? e.message : "Summary request failed"
     const stub = await runStubPriceCheckLlm(request, signal)
     return {
       ...stub,
-      limitations: [...stub.limitations, `OpenRouter error: ${msg.slice(0, 240)}`]
+      limitations: [...stub.limitations, priceSummaryRuntime(msg)]
     }
   }
 }
@@ -226,7 +238,7 @@ const buildReviewSynthesisSystemPrompt = (request: InsightRequest): string => {
       : "Emphasize product satisfaction, durability, use cases, pros/cons. Do NOT prioritize refund/returns unless the snippets are overwhelmingly about returns."
 
   return [
-    "You summarize Bright Data Discover search results for a browser extension user.",
+    "You summarize ranked web search results for a browser extension user.",
     "Reply with JSON only:",
     '{"bullets":[{"text":"string under 900 chars","source_index":[0]}],"sources_overview":"string","limitations":["optional short strings"]}',
     "Each bullet must cite 1–3 integers from source_index matching the provided results[] order (0 = first result).",
@@ -277,7 +289,7 @@ const mapSynthesisToCard = (
     id: "discover-summary",
     kind: "review_themes",
     title: "Source-grounded summary",
-    bullets: bullets.length > 0 ? bullets : [{ text: "No valid cited bullets returned by the model." }],
+    bullets: bullets.length > 0 ? bullets : [{ text: "No valid cited bullets were returned." }],
     ...(sourcesOverview ? { sourcesOverview } : {})
   }
 }
@@ -316,7 +328,7 @@ const runOneReviewSynthAttempt = async (
     const parsedJson: unknown = JSON.parse(raw)
     const parsed = discoverySynthesisSchema.safeParse(parsedJson)
     if (!parsed.success) {
-      return { ok: false, kind: "zod", detail: "OpenRouter summary JSON failed validation" }
+      return { ok: false, kind: "zod", detail: "summary_json_failed_validation" }
     }
 
     const card = mapSynthesisToCard(parsed.data, results)
@@ -331,7 +343,7 @@ const runOneReviewSynthAttempt = async (
       modelLimitations: parsed.data.limitations ?? []
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "OpenRouter synthesis failed"
+    const msg = e instanceof Error ? e.message : "Summary synthesis failed"
     return { ok: false, kind: "runtime", detail: msg.slice(0, 240) }
   }
 }
@@ -349,7 +361,7 @@ export const runReviewDiscoverySynthesis = async (
   const env = getServerEnv()
   const apiKey = env.OPENROUTER_API_KEY?.trim()
   if (!apiKey) {
-    limitations.push("OPENROUTER_API_KEY is not set; skipping web summary synthesis.")
+    limitations.push(REVIEW_SYNTH_KEY_MISSING)
     return { card: null, limitations }
   }
 
@@ -360,7 +372,7 @@ export const runReviewDiscoverySynthesis = async (
 
   for (let attempt = 0; attempt < MAX_REVIEW_SYNTH_ATTEMPTS; attempt++) {
     if (signal.aborted) {
-      limitations.push("Web summary skipped: request aborted.")
+      limitations.push(REVIEW_SYNTH_ABORTED)
       return { card: null, limitations }
     }
     const timeoutMs = REVIEW_SYNTH_LLM_TIMEOUT_MS * (attempt + 1)
@@ -383,24 +395,14 @@ export const runReviewDiscoverySynthesis = async (
   }
 
   if (lastFailure?.kind === "zod") {
-    limitations.push(
-      `OpenRouter summary JSON failed validation after ${MAX_REVIEW_SYNTH_ATTEMPTS} attempts; links below are unchanged.`
-    )
+    limitations.push(REVIEW_SYNTH_VALIDATION_FAILED)
     return { card: null, limitations }
   }
   if (lastFailure?.kind === "card") {
-    limitations.push(
-      `Summary card failed schema check after ${MAX_REVIEW_SYNTH_ATTEMPTS} attempts; showing sources only.`
-    )
+    limitations.push(REVIEW_SYNTH_CARD_SCHEMA_FAILED)
     return { card: null, limitations }
   }
 
-  const detail = lastFailure?.detail ?? "unknown error"
-  limitations.push(
-    `Web summary unavailable after ${MAX_REVIEW_SYNTH_ATTEMPTS} attempts (timeouts T, 2T, 3T): ${detail}`.slice(
-      0,
-      500
-    )
-  )
+  limitations.push(REVIEW_SYNTH_RUNTIME_FAILED)
   return { card: null, limitations }
 }
