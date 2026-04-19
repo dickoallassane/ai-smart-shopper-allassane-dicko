@@ -60,4 +60,58 @@ describe('siteExtractorConfigFileSchema', () => {
     })
     expect(r.success).toBe(true)
   })
+
+  it('accepts retail site with autoSurface empty object', () => {
+    const r = siteExtractorConfigFileSchema.safeParse({
+      sites: [
+        {
+          id: 'x',
+          isService: false,
+          matchPatterns: ['https://a.com/*'],
+          pdpPathPatterns: [{ name: 'p', regex: '/', flags: '' }],
+          autoSurface: {},
+          selectors: {
+            title: { primary: '#t' },
+          },
+        },
+      ],
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('accepts autoSurface with urlRegex and flags', () => {
+    const r = siteExtractorConfigFileSchema.safeParse({
+      sites: [
+        {
+          id: 'x',
+          isService: false,
+          matchPatterns: ['https://a.com/*'],
+          pdpPathPatterns: [{ name: 'p', regex: '/', flags: '' }],
+          autoSurface: { enabled: true, urlRegex: '\\/dp\\/', flags: 'i' },
+          selectors: {
+            title: { primary: '#t' },
+          },
+        },
+      ],
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('accepts autoSurface enabled false', () => {
+    const r = siteExtractorConfigFileSchema.safeParse({
+      sites: [
+        {
+          id: 'x',
+          isService: false,
+          matchPatterns: ['https://a.com/*'],
+          pdpPathPatterns: [{ name: 'p', regex: '/', flags: '' }],
+          autoSurface: { enabled: false },
+          selectors: {
+            title: { primary: '#t' },
+          },
+        },
+      ],
+    })
+    expect(r.success).toBe(true)
+  })
 })

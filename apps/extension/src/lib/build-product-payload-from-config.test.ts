@@ -160,4 +160,37 @@ describe('buildProductPayloadFromConfig', () => {
     expect(payload.reviewExcerpts).toEqual([])
     expect(payload.asin).toBeUndefined()
   })
+
+  it('truncates review excerpts to extract cap so parse never fails on long DOM text', async () => {
+    const { buildProductPayloadFromConfig } = await import('./build-product-payload-from-config')
+    const long = `${'x'.repeat(2500)} end`
+    const site = siteExtractorSiteSchema.parse({
+      id: 'demo-retailer',
+      isService: false,
+      matchPatterns: ['https://demo.example/*'],
+      pdpPathPatterns: [{ name: 'p', regex: '/p/', flags: '' }],
+      selectors: {
+        title: { primary: 'h1' },
+        reviewSnippets: { querySelectorAll: '.rev', maxItems: 2 },
+      },
+    })
+    const dom = new JSDOM(
+      `<html><body><h1>Item</h1><div class="rev">${long}</div><div class="rev">short</div></body></html>`,
+      { url: 'https://demo.example/p/1' }
+    )
+    const loc = {
+      href: dom.window.location.href,
+      pathname: dom.window.location.pathname,
+      hostname: dom.window.location.hostname,
+    }
+    const payload = await buildProductPayloadFromConfig(
+      dom.window.document,
+      loc,
+      'x',
+      site
+    )
+    expect(payload.reviewExcerpts).toHaveLength(2)
+    expect(payload.reviewExcerpts[0]).toBe('x'.repeat(200))
+    expect(payload.reviewExcerpts[1]).toBe('short')
+  })
 })

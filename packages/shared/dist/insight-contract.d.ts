@@ -1,17 +1,34 @@
 import { z } from 'zod';
+export declare const insightKindSchema: z.ZodEnum<["price_check", "review_discovery"]>;
+export type InsightKind = z.infer<typeof insightKindSchema>;
 export declare const insightFlagsSchema: z.ZodObject<{
     llmEnabled: z.ZodBoolean;
     pricingBetaEnabled: z.ZodBoolean;
     /** When true, server skips affiliate product search (e.g. service sites). */
     skipAffiliate: z.ZodDefault<z.ZodBoolean>;
+    /** `review_discovery` runs Bright Data Discover instead of price-check pipeline. */
+    insightKind: z.ZodDefault<z.ZodEnum<["price_check", "review_discovery"]>>;
+    /** Mirrors extension site config `isService` for prompt shaping on the server. */
+    isServiceSite: z.ZodDefault<z.ZodBoolean>;
+    /**
+     * No configured PDP extractor matched the tab; Discover targets the tab URL / hostname only
+     * (open-web reputation), not structured product fields from the page.
+     */
+    unsupportedDomainDiscovery: z.ZodDefault<z.ZodBoolean>;
 }, "strip", z.ZodTypeAny, {
     llmEnabled: boolean;
     pricingBetaEnabled: boolean;
     skipAffiliate: boolean;
+    insightKind: "price_check" | "review_discovery";
+    isServiceSite: boolean;
+    unsupportedDomainDiscovery: boolean;
 }, {
     llmEnabled: boolean;
     pricingBetaEnabled: boolean;
     skipAffiliate?: boolean | undefined;
+    insightKind?: "price_check" | "review_discovery" | undefined;
+    isServiceSite?: boolean | undefined;
+    unsupportedDomainDiscovery?: boolean | undefined;
 }>;
 export type InsightFlags = z.infer<typeof insightFlagsSchema>;
 export declare const insightRequestSchema: z.ZodObject<{
@@ -54,14 +71,29 @@ export declare const insightRequestSchema: z.ZodObject<{
         pricingBetaEnabled: z.ZodBoolean;
         /** When true, server skips affiliate product search (e.g. service sites). */
         skipAffiliate: z.ZodDefault<z.ZodBoolean>;
+        /** `review_discovery` runs Bright Data Discover instead of price-check pipeline. */
+        insightKind: z.ZodDefault<z.ZodEnum<["price_check", "review_discovery"]>>;
+        /** Mirrors extension site config `isService` for prompt shaping on the server. */
+        isServiceSite: z.ZodDefault<z.ZodBoolean>;
+        /**
+         * No configured PDP extractor matched the tab; Discover targets the tab URL / hostname only
+         * (open-web reputation), not structured product fields from the page.
+         */
+        unsupportedDomainDiscovery: z.ZodDefault<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
         skipAffiliate: boolean;
+        insightKind: "price_check" | "review_discovery";
+        isServiceSite: boolean;
+        unsupportedDomainDiscovery: boolean;
     }, {
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
         skipAffiliate?: boolean | undefined;
+        insightKind?: "price_check" | "review_discovery" | undefined;
+        isServiceSite?: boolean | undefined;
+        unsupportedDomainDiscovery?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     product: {
@@ -80,6 +112,9 @@ export declare const insightRequestSchema: z.ZodObject<{
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
         skipAffiliate: boolean;
+        insightKind: "price_check" | "review_discovery";
+        isServiceSite: boolean;
+        unsupportedDomainDiscovery: boolean;
     };
 }, {
     product: {
@@ -98,6 +133,9 @@ export declare const insightRequestSchema: z.ZodObject<{
         llmEnabled: boolean;
         pricingBetaEnabled: boolean;
         skipAffiliate?: boolean | undefined;
+        insightKind?: "price_check" | "review_discovery" | undefined;
+        isServiceSite?: boolean | undefined;
+        unsupportedDomainDiscovery?: boolean | undefined;
     };
 }>;
 export type InsightRequest = z.infer<typeof insightRequestSchema>;
@@ -165,6 +203,8 @@ export declare const insightCardSchema: z.ZodObject<{
             anchorHint?: string | undefined;
         } | undefined;
     }>, "many">;
+    /** Short recap of what source types/themes the bullets drew from (Discover synthesis). */
+    sourcesOverview: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     title: string;
     id: string;
@@ -176,6 +216,7 @@ export declare const insightCardSchema: z.ZodObject<{
             anchorHint?: string | undefined;
         } | undefined;
     }[];
+    sourcesOverview?: string | undefined;
 }, {
     title: string;
     id: string;
@@ -187,6 +228,7 @@ export declare const insightCardSchema: z.ZodObject<{
             anchorHint?: string | undefined;
         } | undefined;
     }[];
+    sourcesOverview?: string | undefined;
 }>;
 export declare const pricingRowSchema: z.ZodObject<{
     label: z.ZodString;
@@ -245,6 +287,72 @@ export declare const affiliateMatchSchema: z.ZodObject<{
     imageUrl?: string | undefined;
 }>;
 export type AffiliateMatch = z.infer<typeof affiliateMatchSchema>;
+export declare const reviewDiscoveryResultSchema: z.ZodObject<{
+    link: z.ZodString;
+    title: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
+    relevanceScore: z.ZodOptional<z.ZodNumber>;
+    /** Markdown page excerpt when Discover was called with include_content */
+    content: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    title: string;
+    link: string;
+    description?: string | undefined;
+    relevanceScore?: number | undefined;
+    content?: string | undefined;
+}, {
+    title: string;
+    link: string;
+    description?: string | undefined;
+    relevanceScore?: number | undefined;
+    content?: string | undefined;
+}>;
+export type ReviewDiscoveryResult = z.infer<typeof reviewDiscoveryResultSchema>;
+export declare const reviewDiscoverySchema: z.ZodObject<{
+    query: z.ZodString;
+    intent: z.ZodOptional<z.ZodString>;
+    results: z.ZodArray<z.ZodObject<{
+        link: z.ZodString;
+        title: z.ZodString;
+        description: z.ZodOptional<z.ZodString>;
+        relevanceScore: z.ZodOptional<z.ZodNumber>;
+        /** Markdown page excerpt when Discover was called with include_content */
+        content: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        title: string;
+        link: string;
+        description?: string | undefined;
+        relevanceScore?: number | undefined;
+        content?: string | undefined;
+    }, {
+        title: string;
+        link: string;
+        description?: string | undefined;
+        relevanceScore?: number | undefined;
+        content?: string | undefined;
+    }>, "many">;
+}, "strip", z.ZodTypeAny, {
+    query: string;
+    results: {
+        title: string;
+        link: string;
+        description?: string | undefined;
+        relevanceScore?: number | undefined;
+        content?: string | undefined;
+    }[];
+    intent?: string | undefined;
+}, {
+    query: string;
+    results: {
+        title: string;
+        link: string;
+        description?: string | undefined;
+        relevanceScore?: number | undefined;
+        content?: string | undefined;
+    }[];
+    intent?: string | undefined;
+}>;
+export type ReviewDiscovery = z.infer<typeof reviewDiscoverySchema>;
 export declare const insightResponseSchema: z.ZodObject<{
     version: z.ZodLiteral<"1">;
     requestId: z.ZodString;
@@ -277,6 +385,8 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }>, "many">;
+        /** Short recap of what source types/themes the bullets drew from (Discover synthesis). */
+        sourcesOverview: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         title: string;
         id: string;
@@ -288,6 +398,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }, {
         title: string;
         id: string;
@@ -299,6 +410,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }>, "many">;
     pricingRows: z.ZodOptional<z.ZodArray<z.ZodObject<{
         label: z.ZodString;
@@ -355,6 +467,50 @@ export declare const insightResponseSchema: z.ZodObject<{
         directUrl?: string | undefined;
         imageUrl?: string | undefined;
     }>, "many">>;
+    reviewDiscovery: z.ZodOptional<z.ZodObject<{
+        query: z.ZodString;
+        intent: z.ZodOptional<z.ZodString>;
+        results: z.ZodArray<z.ZodObject<{
+            link: z.ZodString;
+            title: z.ZodString;
+            description: z.ZodOptional<z.ZodString>;
+            relevanceScore: z.ZodOptional<z.ZodNumber>;
+            /** Markdown page excerpt when Discover was called with include_content */
+            content: z.ZodOptional<z.ZodString>;
+        }, "strip", z.ZodTypeAny, {
+            title: string;
+            link: string;
+            description?: string | undefined;
+            relevanceScore?: number | undefined;
+            content?: string | undefined;
+        }, {
+            title: string;
+            link: string;
+            description?: string | undefined;
+            relevanceScore?: number | undefined;
+            content?: string | undefined;
+        }>, "many">;
+    }, "strip", z.ZodTypeAny, {
+        query: string;
+        results: {
+            title: string;
+            link: string;
+            description?: string | undefined;
+            relevanceScore?: number | undefined;
+            content?: string | undefined;
+        }[];
+        intent?: string | undefined;
+    }, {
+        query: string;
+        results: {
+            title: string;
+            link: string;
+            description?: string | undefined;
+            relevanceScore?: number | undefined;
+            content?: string | undefined;
+        }[];
+        intent?: string | undefined;
+    }>>;
     limitations: z.ZodArray<z.ZodString, "many">;
     generatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
@@ -371,6 +527,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }[];
     limitations: string[];
     generatedAt: string;
@@ -393,6 +550,17 @@ export declare const insightResponseSchema: z.ZodObject<{
         directUrl?: string | undefined;
         imageUrl?: string | undefined;
     }[] | undefined;
+    reviewDiscovery?: {
+        query: string;
+        results: {
+            title: string;
+            link: string;
+            description?: string | undefined;
+            relevanceScore?: number | undefined;
+            content?: string | undefined;
+        }[];
+        intent?: string | undefined;
+    } | undefined;
 }, {
     version: "1";
     requestId: string;
@@ -407,6 +575,7 @@ export declare const insightResponseSchema: z.ZodObject<{
                 anchorHint?: string | undefined;
             } | undefined;
         }[];
+        sourcesOverview?: string | undefined;
     }[];
     limitations: string[];
     generatedAt: string;
@@ -429,6 +598,17 @@ export declare const insightResponseSchema: z.ZodObject<{
         directUrl?: string | undefined;
         imageUrl?: string | undefined;
     }[] | undefined;
+    reviewDiscovery?: {
+        query: string;
+        results: {
+            title: string;
+            link: string;
+            description?: string | undefined;
+            relevanceScore?: number | undefined;
+            content?: string | undefined;
+        }[];
+        intent?: string | undefined;
+    } | undefined;
 }>;
 export type InsightResponse = z.infer<typeof insightResponseSchema>;
 export declare const insightErrorBodySchema: z.ZodObject<{

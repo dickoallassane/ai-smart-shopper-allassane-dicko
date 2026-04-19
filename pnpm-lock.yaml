@@ -108,6 +108,9 @@ importers:
       tldts:
         specifier: ^7.0.28
         version: 7.0.28
+      undici:
+        specifier: ^7.25.0
+        version: 7.25.0
       zod:
         specifier: ^3.24.4
         version: 3.25.76

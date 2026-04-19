@@ -46,6 +46,59 @@ describe("insightRequestSchema", () => {
     })
     expect(parsed.flags.skipAffiliate).toBe(true)
   })
+
+  it("defaults insightKind to price_check and isServiceSite to false", () => {
+    const parsed = insightRequestSchema.parse({
+      product: validProduct,
+      flags: { llmEnabled: true, pricingBetaEnabled: false }
+    })
+    expect(parsed.flags.insightKind).toBe("price_check")
+    expect(parsed.flags.isServiceSite).toBe(false)
+  })
+
+  it("accepts review_discovery and isServiceSite", () => {
+    const parsed = insightRequestSchema.parse({
+      product: validProduct,
+      flags: {
+        llmEnabled: true,
+        pricingBetaEnabled: false,
+        insightKind: "review_discovery",
+        isServiceSite: true
+      }
+    })
+    expect(parsed.flags.insightKind).toBe("review_discovery")
+    expect(parsed.flags.isServiceSite).toBe(true)
+  })
+
+  it("defaults unsupportedDomainDiscovery to false", () => {
+    const parsed = insightRequestSchema.parse({
+      product: validProduct,
+      flags: { llmEnabled: true, pricingBetaEnabled: false }
+    })
+    expect(parsed.flags.unsupportedDomainDiscovery).toBe(false)
+  })
+
+  it("accepts unsupportedDomainDiscovery true for open-web review discovery", () => {
+    const parsed = insightRequestSchema.parse({
+      product: {
+        retailer: "open_web",
+        locale: "en-US",
+        url: "https://example.com/blog/post",
+        title: "Example blog",
+        reviewExcerpts: [],
+        extractedAt: "2026-04-15T12:00:00.000Z"
+      },
+      flags: {
+        llmEnabled: true,
+        pricingBetaEnabled: false,
+        skipAffiliate: true,
+        insightKind: "review_discovery",
+        isServiceSite: false,
+        unsupportedDomainDiscovery: true
+      }
+    })
+    expect(parsed.flags.unsupportedDomainDiscovery).toBe(true)
+  })
 })
 
 describe("insightResponseSchema", () => {
@@ -158,6 +211,37 @@ describe("insightResponseSchema", () => {
     })
     expect(parsed.affiliateMatches).toHaveLength(1)
     expect(parsed.affiliateMatches?.[0]?.merchantName).toBe("Example Merchant")
+  })
+
+  it("accepts optional reviewDiscovery when valid", () => {
+    const parsed = insightResponseSchema.parse({
+      version: "1",
+      requestId: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+      cards: [
+        {
+          id: "rd",
+          kind: "reputation",
+          title: "Sources",
+          bullets: [{ text: "Third-party web results — not verified endorsements." }]
+        }
+      ],
+      reviewDiscovery: {
+        query: "Example product reviews",
+        intent: "Prioritize Trustpilot, Reddit, YouTube.",
+        results: [
+          {
+            link: "https://www.reddit.com/r/example/comments/x/",
+            title: "Thread",
+            description: "Mixed opinions",
+            relevanceScore: 0.91
+          }
+        ]
+      },
+      limitations: ["Opinions from the open web only."],
+      generatedAt: "2026-04-15T12:00:00.000Z"
+    })
+    expect(parsed.reviewDiscovery?.results).toHaveLength(1)
+    expect(parsed.reviewDiscovery?.query).toBe("Example product reviews")
   })
 })
 

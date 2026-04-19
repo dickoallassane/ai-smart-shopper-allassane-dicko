@@ -38,6 +38,27 @@ describe("getServerEnv", () => {
     }
   })
 
+  it("uses BRIGHT_DATA_API_KEY when BRIGHT_DATA_API_TOKEN is unset", () => {
+    const prevToken = process.env.BRIGHT_DATA_API_TOKEN
+    const prevKey = process.env.BRIGHT_DATA_API_KEY
+    delete process.env.BRIGHT_DATA_API_TOKEN
+    process.env.BRIGHT_DATA_API_KEY = "bd-key-from-alias"
+    try {
+      expect(getServerEnv().BRIGHT_DATA_API_TOKEN).toBe("bd-key-from-alias")
+    } finally {
+      if (prevToken === undefined) {
+        delete process.env.BRIGHT_DATA_API_TOKEN
+      } else {
+        process.env.BRIGHT_DATA_API_TOKEN = prevToken
+      }
+      if (prevKey === undefined) {
+        delete process.env.BRIGHT_DATA_API_KEY
+      } else {
+        process.env.BRIGHT_DATA_API_KEY = prevKey
+      }
+    }
+  })
+
   it("treats whitespace-only optional strings as unset", () => {
     const prevKey = process.env.AFFILIATE_NETWORKS_API_KEY
     process.env.AFFILIATE_NETWORKS_API_KEY = "   \t"

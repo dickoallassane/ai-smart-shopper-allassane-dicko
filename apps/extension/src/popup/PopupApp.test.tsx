@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PopupApp } from "./PopupApp"
-import { PRODUCT_PAYLOAD_BY_TAB_ID } from "../lib/pdp-session-storage"
+import { DEFAULT_SITE_EXTRACTOR_CONFIG, SITE_EXTRACTOR_CONFIG_JSON_KEY } from "../lib/site-extractor-config"
 import { createChromeMock } from "../test-utils/chrome-mock"
 
 const validProduct = {
@@ -32,10 +32,10 @@ const renderPopup = () => {
 describe("PopupApp", () => {
   let chromeMock: ReturnType<typeof createChromeMock>
   let closeSpy: ReturnType<typeof vi.spyOn>
-  let popupSessionValues: Record<string, unknown>
+  let stored: Record<string, unknown>
 
   beforeEach(() => {
-    popupSessionValues = {}
+    stored = {}
     closeSpy = vi.spyOn(window, "close").mockImplementation(() => {})
     chromeMock = createChromeMock()
     chromeMock.install()
@@ -48,12 +48,11 @@ describe("PopupApp", () => {
         return Promise.resolve()
       }
     )
-    chromeMock.tabsQuery.mockResolvedValue([{ id: 42 }])
-    chromeMock.storageSessionGet.mockImplementation(
-      async (keys: string | string[] | Record<string, unknown> | null | undefined) => {
-        const names =
-          keys === null || keys === undefined
-            ? Object.keys(popupSessionValues)
+    chromeMock.storageLocalGet.mockImplementation(
+      (keys: string | string[] | Record<string, unknown> | null, cb?: (r: Record<string, unknown>) => void) => {
+        const list =
+          keys === null
+            ? Object.keys(stored)
             : typeof keys === "string"
               ? [keys]
               : Array.isArray(keys)
@@ -62,14 +61,29 @@ describe("PopupApp", () => {
                   ? Object.keys(keys)
                   : []
         const out: Record<string, unknown> = {}
-        for (const n of names) {
-          if (Object.prototype.hasOwnProperty.call(popupSessionValues, n)) {
-            out[n] = popupSessionValues[n]
+        for (const k of list) {
+          if (Object.prototype.hasOwnProperty.call(stored, k)) {
+            out[k] = stored[k]
           }
         }
-        return out
+        if (typeof cb === "function") {
+          cb(out)
+          return undefined
+        }
+        return Promise.resolve(out)
       }
     )
+    chromeMock.tabsQuery.mockResolvedValue([
+      { id: 42, url: "https://www.amazon.com/dp/B0DZZWMB2L" }
+    ])
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: false, error: "No receiver" })
+        }
+      }
+    )
+    chromeMock.storageSessionGet.mockResolvedValue({})
   })
 
   afterEach(() => {
@@ -86,18 +100,24 @@ describe("PopupApp", () => {
   })
 
   it("shows invalid payload hint when stored product fails schema", async () => {
-    popupSessionValues = {
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
-        "42": {
-          retailer: "amazon",
-          locale: "en-US",
-          url: "https://www.amazon.com/dp/B0DZZWMB2L",
-          title: "",
-          extractedAt: "2026-04-15T12:00:00.000Z",
-          reviewExcerpts: []
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({
+            ok: true,
+            product: {
+              retailer: "amazon",
+              locale: "en-US",
+              url: "https://www.amazon.com/dp/B0DZZWMB2L",
+              title: "",
+              extractedAt: "2026-04-15T12:00:00.000Z",
+              reviewExcerpts: []
+            }
+          })
         }
       }
-    }
+    )
     renderPopup()
     await waitFor(() => {
       expect(
@@ -107,9 +127,14 @@ describe("PopupApp", () => {
   })
 
   it("shows ready hint when stored product is valid", async () => {
-    popupSessionValues = {
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "42": validProduct }
-    }
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, product: validProduct })
+        }
+      }
+    )
     renderPopup()
     await waitFor(() => {
       expect(

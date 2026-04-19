@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { insightRequestSchema } from "@shopfriend/shared"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { persistInsightJsonSnapshot, shouldPersistInsightJson } from "./persist-insight-json"
 
@@ -21,7 +22,7 @@ describe("persistInsightJsonSnapshot", () => {
     const requestId = crypto.randomUUID()
     await persistInsightJsonSnapshot({
       routeRequestId: "route-correlation",
-      request: {
+      request: insightRequestSchema.parse({
         product: {
           retailer: "amazon",
           locale: "en-US",
@@ -30,8 +31,14 @@ describe("persistInsightJsonSnapshot", () => {
           reviewExcerpts: [],
           extractedAt: "2026-04-17T12:00:00.000Z"
         },
-        flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate: false }
-      },
+        flags: {
+          llmEnabled: true,
+          pricingBetaEnabled: false,
+          skipAffiliate: false,
+          insightKind: "price_check",
+          isServiceSite: false
+        }
+      }),
       response: {
         version: "1",
         requestId,
@@ -64,7 +71,7 @@ describe("persistInsightJsonSnapshot", () => {
     const spy = vi.spyOn(fs, "mkdir")
     await persistInsightJsonSnapshot({
       routeRequestId: "x",
-      request: {
+      request: insightRequestSchema.parse({
         product: {
           retailer: "amazon",
           locale: "en-US",
@@ -73,8 +80,14 @@ describe("persistInsightJsonSnapshot", () => {
           reviewExcerpts: [],
           extractedAt: "2026-04-17T12:00:00.000Z"
         },
-        flags: { llmEnabled: false, pricingBetaEnabled: false, skipAffiliate: false }
-      },
+        flags: {
+          llmEnabled: false,
+          pricingBetaEnabled: false,
+          skipAffiliate: false,
+          insightKind: "price_check",
+          isServiceSite: false
+        }
+      }),
       response: {
         version: "1",
         requestId: crypto.randomUUID(),

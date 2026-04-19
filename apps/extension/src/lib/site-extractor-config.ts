@@ -3,6 +3,9 @@ import { z } from 'zod'
 /** `chrome.storage.local` key for the JSON string of {@link SiteExtractorConfigFile} */
 export const SITE_EXTRACTOR_CONFIG_JSON_KEY = 'siteExtractorConfigJson' as const
 
+/** When true, content script must not show the auto-surface overlay on any site. */
+export const AUTO_SURFACE_GLOBALLY_DISABLED_KEY = 'autoSurfaceGloballyDisabled' as const
+
 /** Side panel → background: re-run `registerContentScripts` after config save */
 export const SITE_CONFIGS_UPDATED = 'SITE_CONFIGS_UPDATED' as const
 
@@ -45,6 +48,17 @@ const productIdFromUrlSchema = z.object({
   group: z.number().int().min(1).max(9).default(1)
 })
 
+/**
+ * Optional in-page prompt on supported PDP URLs. Omitted = no auto-surface for that site.
+ * `urlRegex` omitted → any URL that already matches host + `pdpPathPatterns`.
+ * `urlRegex` set → additionally require `new RegExp(urlRegex, flags).test(location.href)`.
+ */
+const autoSurfaceSchema = z.object({
+  enabled: z.boolean().optional(),
+  urlRegex: z.string().min(1).max(512).optional(),
+  flags: z.string().max(8).optional()
+})
+
 export const siteExtractorSiteSchema = z
   .object({
     id: z.string().min(1).max(64),
@@ -52,6 +66,7 @@ export const siteExtractorSiteSchema = z
     matchPatterns: z.array(z.string().min(1).max(512)).min(1),
     pdpPathPatterns: z.array(pathPatternSchema).min(1),
     productIdFromUrl: productIdFromUrlSchema.optional(),
+    autoSurface: autoSurfaceSchema.optional(),
     /** Omitted for `isService` sites (payload uses page title only; no DOM scraping). */
     selectors: siteSelectorsOptionalSchema
   })
@@ -104,13 +119,15 @@ export const DEFAULT_SITE_EXTRACTOR_CONFIG: SiteExtractorConfigFile = {
             '[data-hook="review-collapsed"] span, #reviewsMedley .review-text',
           maxItems: 10
         }
-      }
+      },
+      autoSurface: { enabled: true }
     },
     {
       id: 'madmuscles',
       isService: true,
       matchPatterns: ['https://madmuscles.com/*', 'https://www.madmuscles.com/*'],
-      pdpPathPatterns: [{ name: 'any_page', regex: '.*', flags: '' }]
+      pdpPathPatterns: [{ name: 'any_page', regex: '.*', flags: '' }],
+      autoSurface: { enabled: true }
     }
   ]
 }

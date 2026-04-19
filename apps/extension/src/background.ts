@@ -1,11 +1,13 @@
-import type { InsightRequest, InsightResponse, ProductPayload } from '@shopfriend/shared'
-import {
-  INSIGHT_CONTEXT_TAB_BY_WINDOW_ID,
-  PRODUCT_PAYLOAD_BY_TAB_ID,
-  mergeProductPayloadForTab,
-  type InsightContextTabByWindowId,
-  type ProductPayloadByTabId
-} from './lib/pdp-session-storage'
+import type {
+  ChatTurnRequest,
+  ChatTurnResponse,
+  InsightRequest,
+  InsightResponse,
+  ProductPayload
+} from '@shopfriend/shared'
+import { PRODUCT_PAYLOAD_BY_TAB_ID, mergeProductPayloadForTab, type ProductPayloadByTabId } from './lib/pdp-session-storage'
+import { GET_SHOPPER_TAB_ID, SHOW_SHOPFRIEND_PAGE_POPUP } from './lib/shopfriend-messages'
+import { isRestrictedBrowserUrl } from './lib/request-product-snapshot'
 import {
   defaultSiteExtractorConfigJson,
   parseSiteExtractorConfigJson,
@@ -32,6 +34,31 @@ const getApiBase = (): string => {
     return resolveApiBase()
   }
   return resolveApiBase()
+}
+
+const fetchInsightChat = async (
+  body: ChatTurnRequest,
+  accessToken: string | undefined,
+  signal: AbortSignal
+): Promise<ChatTurnResponse> => {
+  const base = getApiBase()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  }
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`
+  }
+  const response = await fetch(`${base}/api/insight/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || `Chat failed (${response.status})`)
+  }
+  return (await response.json()) as ChatTurnResponse
 }
 
 const fetchInsight = async (
@@ -152,6 +179,11 @@ const syncRegisteredContentScripts = async (): Promise<void> => {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === GET_SHOPPER_TAB_ID) {
+    sendResponse({ tabId: sender.tab?.id })
+    return undefined
+  }
+
   if (message?.type === 'OPEN_SIDE_PANEL') {
     const open = async () => {
       const tabId = message.tabId as number | undefined
@@ -162,20 +194,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // `sidePanel.open` to the user gesture from the popup; earlier awaits
       // (tabs.get, storage) consume that chain and the open silently fails.
       await chrome.sidePanel.open({ tabId })
-      try {
-        const tab = await chrome.tabs.get(tabId)
-        const session = await chrome.storage.session.get(INSIGHT_CONTEXT_TAB_BY_WINDOW_ID)
-        const prev =
-          (session[INSIGHT_CONTEXT_TAB_BY_WINDOW_ID] as InsightContextTabByWindowId | undefined) ?? {}
-        await chrome.storage.session.set({
-          [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: {
-            ...prev,
-            [String(tab.windowId)]: tabId
-          }
-        })
-      } catch (error) {
-        console.warn('[ShopFriend] Could not persist insight context tab for window', error)
-      }
     }
     void open()
     return
@@ -202,6 +220,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           /* no listeners */
         }
         sendResponse({ ok: true as const, insight })
+      } catch (error) {
+        const err = error instanceof Error ? error.message : 'Unknown error'
+        sendResponse({ ok: false as const, error: err })
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+
+    void run()
+    return true
+  }
+
+  if (message?.type === 'REQUEST_INSIGHT_CHAT') {
+    const controller = new AbortController()
+    const timeoutMs = typeof message.timeoutMs === 'number' ? message.timeoutMs : 64_000
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+    const run = async () => {
+      try {
+        const stored = await chrome.storage.local.get(['extensionAccessToken'])
+        const accessToken = stored.extensionAccessToken as string | undefined
+        const data = await fetchInsightChat(
+          message.payload as ChatTurnRequest,
+          accessToken,
+          controller.signal
+        )
+        sendResponse({ ok: true as const, data })
       } catch (error) {
         const err = error instanceof Error ? error.message : 'Unknown error'
         sendResponse({ ok: false as const, error: err })
@@ -253,3 +298,30 @@ void (async () => {
   await seedSiteConfigIfEmpty()
   await syncRegisteredContentScripts()
 })()
+
+const handleBrowserActionClick = async (tab: chrome.tabs.Tab): Promise<void> => {
+  if (tab.id === undefined) {
+    return
+  }
+  if (!tab.url || isRestrictedBrowserUrl(tab.url)) {
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id })
+    } catch {
+      /* ignore */
+    }
+    return
+  }
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: SHOW_SHOPFRIEND_PAGE_POPUP, tabId: tab.id })
+  } catch {
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id })
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  void handleBrowserActionClick(tab)
+})

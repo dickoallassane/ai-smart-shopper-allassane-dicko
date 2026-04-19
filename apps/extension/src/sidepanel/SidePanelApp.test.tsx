@@ -5,15 +5,22 @@ import type { InsightResponse } from "@shopfriend/shared"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { SidePanelApp } from "./SidePanelApp"
 import {
-  INSIGHT_CONTEXT_TAB_BY_WINDOW_ID,
-  PRODUCT_PAYLOAD_BY_TAB_ID
-} from "../lib/pdp-session-storage"
-import {
   DEFAULT_SITE_EXTRACTOR_CONFIG,
   SITE_CONFIGS_UPDATED,
   SITE_EXTRACTOR_CONFIG_JSON_KEY
 } from "../lib/site-extractor-config"
 import { createChromeMock } from "../test-utils/chrome-mock"
+
+const { requestInsightChatMock } = vi.hoisted(() => ({
+  requestInsightChatMock: vi.fn().mockResolvedValue({
+    reply: "Stub chat assistant reply.",
+    requestId: "11111111-1111-4111-8111-111111111111"
+  })
+}))
+
+vi.mock("../lib/request-insight-chat", () => ({
+  requestInsightChat: requestInsightChatMock
+}))
 
 const validProduct = {
   retailer: "amazon" as const,
@@ -38,6 +45,66 @@ const mockInsightNoAffiliate: InsightResponse = {
   ],
   limitations: ["Stub"],
   generatedAt: "2026-04-15T12:00:00.000Z"
+}
+
+const mockInsightReviewDiscovery: InsightResponse = {
+  version: "1",
+  requestId: "d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44",
+  cards: [
+    {
+      id: "review-discovery-disclaimer",
+      kind: "reputation",
+      title: "Web research",
+      bullets: [{ text: "Third-party web results — not verified facts." }]
+    }
+  ],
+  reviewDiscovery: {
+    query: '"Example product" reviews pros cons www.amazon.com',
+    intent: "Prioritize Trustpilot, Reddit, YouTube.",
+    results: [
+      {
+        link: "https://www.reddit.com/r/example/comments/abc",
+        title: "Reddit thread about product",
+        description: "Mixed reviews here.",
+        relevanceScore: 0.88
+      }
+    ]
+  },
+  limitations: ["Third-party opinions from the open web only — not financial, legal, or medical advice."],
+  generatedAt: "2026-04-15T12:00:00.000Z"
+}
+
+const mockInsightReviewDiscoveryWithSummary: InsightResponse = {
+  ...mockInsightReviewDiscovery,
+  requestId: "e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a55",
+  cards: [
+    ...(mockInsightReviewDiscovery.cards ?? []),
+    {
+      id: "discover-summary",
+      kind: "review_themes",
+      title: "Source-grounded summary",
+      bullets: [
+        {
+          text: "Reddit discussion highlights mixed sentiment about the product.",
+          citation: {
+            text: "Reddit thread about product — Mixed reviews here.",
+            anchorHint: "discover:0"
+          }
+        }
+      ],
+      sourcesOverview:
+        "The list centers on one ranked result (0): forum-style discussion with mixed sentiment about the product."
+    }
+  ]
+}
+
+const mockInsightReviewDiscoveryNoSynthesisKey: InsightResponse = {
+  ...mockInsightReviewDiscovery,
+  requestId: "f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a66",
+  limitations: [
+    ...mockInsightReviewDiscovery.limitations,
+    "Summary service is not configured; web summary was skipped."
+  ]
 }
 
 const mockInsightWithAffiliate: InsightResponse = {
@@ -96,11 +163,10 @@ const renderSidePanel = () => {
 describe("SidePanelApp", () => {
   let chromeMock: ReturnType<typeof createChromeMock>
   let stored: Record<string, unknown>
-  let sessionValues: Record<string, unknown>
 
   beforeEach(() => {
+    requestInsightChatMock.mockClear()
     stored = {}
-    sessionValues = {}
     chromeMock = createChromeMock()
     chromeMock.install()
     chromeMock.storageLocalGet.mockImplementation(
@@ -136,29 +202,23 @@ describe("SidePanelApp", () => {
         }
       }
     )
-    chromeMock.storageSessionGet.mockImplementation(
-      async (keys: string | string[] | Record<string, unknown> | null | undefined) => {
-        const names =
-          keys === null || keys === undefined
-            ? Object.keys(sessionValues)
-            : typeof keys === "string"
-              ? [keys]
-              : Array.isArray(keys)
-                ? keys
-                : typeof keys === "object"
-                  ? Object.keys(keys)
-                  : []
-        const out: Record<string, unknown> = {}
-        for (const n of names) {
-          if (Object.prototype.hasOwnProperty.call(sessionValues, n)) {
-            out[n] = sessionValues[n]
-          }
+    chromeMock.storageSessionGet.mockResolvedValue({})
+    chromeMock.windowsGetCurrent.mockResolvedValue({ id: 10 })
+    chromeMock.tabsQuery.mockResolvedValue([
+      { id: 77, url: "https://www.amazon.com/dp/B0DZZWMB2L" }
+    ])
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, product: validProduct })
         }
-        return out
       }
     )
-    chromeMock.windowsGetCurrent.mockResolvedValue({ id: 10 })
-    chromeMock.tabsQuery.mockResolvedValue([{ id: 77 }])
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 77,
+      url: "https://www.amazon.com/dp/B0DZZWMB2L",
+      title: "Example on Amazon"
+    })
   })
 
   afterEach(() => {
@@ -188,31 +248,191 @@ describe("SidePanelApp", () => {
     })
   })
 
-  it("renders disabled chat composer", async () => {
+  it("renders disabled chat composer until research context exists", async () => {
     renderSidePanel()
     await waitFor(() => {
-      expect(screen.getByLabelText(/Message \(disabled\)/i)).toBeDisabled()
+      expect(screen.getByPlaceholderText(/Run Get Review Insight first/i)).toBeDisabled()
     })
   })
 
-  it("appends stub assistant reply when Get Review Insight is clicked", async () => {
+  it("requests domain review discovery when tab URL is not a configured site", async () => {
     const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    const unknownUrl = "https://blog.unknown-example.test/how-to"
+    chromeMock.tabsQuery.mockResolvedValue([{ id: 99, url: unknownUrl }])
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 99,
+      url: unknownUrl,
+      title: "How to — guide"
+    })
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (
+        msg: {
+          type?: string
+          payload?: { flags?: Record<string, unknown>; product?: { retailer?: string; url?: string } }
+        },
+        cb?: (r: unknown) => void
+      ) => {
+        expect(msg.type).toBe("REQUEST_INSIGHT")
+        expect(msg.payload?.flags?.unsupportedDomainDiscovery).toBe(true)
+        expect(msg.payload?.flags?.insightKind).toBe("review_discovery")
+        expect(msg.payload?.product?.retailer).toBe("open_web")
+        expect(msg.payload?.product?.url).toBe(unknownUrl)
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole("button", { name: /^Check Price$/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(chromeMock.runtimeSendMessage).toHaveBeenCalled()
+    })
+    expect(screen.getByText(/Searching the web for reviews and reputation/i)).toBeInTheDocument()
+  })
+
+  it("requests review discovery and shows source links when Get Review Insight succeeds", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string; payload?: { flags?: { insightKind?: string } } }, cb?: (r: unknown) => void) => {
+        expect(msg.type).toBe("REQUEST_INSIGHT")
+        expect(msg.payload?.flags?.insightKind).toBe("review_discovery")
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
     renderSidePanel()
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
     })
     await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
     await waitFor(() => {
-      expect(screen.getByText(/Review-focused insights will run here/i)).toBeInTheDocument()
+      expect(screen.getByRole("link", { name: /Reddit thread about product/i })).toHaveAttribute(
+        "href",
+        "https://www.reddit.com/r/example/comments/abc"
+      )
+    })
+    expect(screen.getByText(/ranked web sources/i)).toBeInTheDocument()
+  })
+
+  it("shows Summary block when review discovery response includes discover-summary card", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string; payload?: { flags?: { insightKind?: string } } }, cb?: (r: unknown) => void) => {
+        expect(msg.type).toBe("REQUEST_INSIGHT")
+        expect(msg.payload?.flags?.insightKind).toBe("review_discovery")
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscoveryWithSummary })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/numbered summary cites entries/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/^Summary$/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Reddit discussion highlights mixed sentiment about the product/i)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/source #1 below/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/The list centers on one ranked result \(0\): forum-style discussion/i)
+    ).toBeInTheDocument()
+  })
+
+  it("enables chat after review insight and calls requestInsightChat on Send", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string }, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Reddit thread about product/i })).toBeInTheDocument()
+    })
+    const chatInput = screen.getByPlaceholderText(/Ask about the sources/i)
+    expect(chatInput).not.toBeDisabled()
+    await user.type(chatInput, "Should I trust the first link?")
+    await user.click(screen.getByRole("button", { name: "Send chat message" }))
+    await waitFor(() => {
+      expect(requestInsightChatMock).toHaveBeenCalledTimes(1)
+    })
+    const arg = requestInsightChatMock.mock.calls[0]![0] as {
+      userMessage: string
+      researchContext: { reviewDiscovery: { results: unknown[] } }
+    }
+    expect(arg.userMessage).toBe("Should I trust the first link?")
+    expect(arg.researchContext.reviewDiscovery.results.length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(screen.getByText("Stub chat assistant reply.")).toBeInTheDocument()
+    })
+  })
+
+  it("shows sources reminder below thread, centered, outside the chat log", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string }, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscovery })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByTestId("sources-reminder-strip")).toBeInTheDocument()
+    })
+    const strip = screen.getByTestId("sources-reminder-strip")
+    expect(strip).toHaveTextContent(/Bad buzz online is not the whole story/i)
+    expect(strip).toHaveClass("text-center")
+    expect(strip.closest('[role="log"]')).toBeNull()
+  })
+
+  it("shows server footnote when synthesis was skipped (e.g. missing summary service)", async () => {
+    const user = userEvent.setup()
+    stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
+    chromeMock.runtimeSendMessage.mockImplementation(
+      (msg: { type?: string }, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: true, insight: mockInsightReviewDiscoveryNoSynthesisKey })
+        }
+      }
+    )
+    renderSidePanel()
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Get Review Insight/i })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole("button", { name: /Get Review Insight/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/Summary service is not configured/i)).toBeInTheDocument()
     })
   })
 
   it("requests insight and shows price-check user copy when Check Price is clicked with valid session", async () => {
     const user = userEvent.setup()
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "55": validProduct }
-    }
     chromeMock.runtimeSendMessage.mockImplementation(
       (msg: { type?: string }, cb?: (r: unknown) => void) => {
         if (typeof cb === "function") {
@@ -245,10 +465,6 @@ describe("SidePanelApp", () => {
 
   it("shows intro and two affiliate cards when insight includes affiliateMatches", async () => {
     const user = userEvent.setup()
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: { "55": validProduct }
-    }
     chromeMock.runtimeSendMessage.mockImplementation(
       (_msg: { type?: string }, cb?: (r: unknown) => void) => {
         if (typeof cb === "function") {
@@ -282,6 +498,13 @@ describe("SidePanelApp", () => {
 
   it("shows guidance in thread when Check Price is clicked without product context", async () => {
     const user = userEvent.setup()
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({ ok: false, error: "No receiver" })
+        }
+      }
+    )
     renderSidePanel()
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^Check Price$/i })).toBeInTheDocument()
@@ -378,19 +601,29 @@ describe("SidePanelApp", () => {
   })
 
   it("hides Check Price when the insight source tab is a service site (madmuscles)", async () => {
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
-        "55": {
-          retailer: "madmuscles",
-          locale: "en-US",
-          url: "https://www.madmuscles.com/",
-          title: "Coaching",
-          reviewExcerpts: [] as string[],
-          extractedAt: "2026-04-15T12:00:00.000Z",
-        },
-      },
-    }
+    chromeMock.tabsQuery.mockResolvedValue([{ id: 77, url: "https://www.madmuscles.com/" }])
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 77,
+      url: "https://www.madmuscles.com/",
+      title: "Madmuscles"
+    })
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({
+            ok: true,
+            product: {
+              retailer: "madmuscles",
+              locale: "en-US",
+              url: "https://www.madmuscles.com/",
+              title: "Coaching",
+              reviewExcerpts: [] as string[],
+              extractedAt: "2026-04-15T12:00:00.000Z"
+            }
+          })
+        }
+      }
+    )
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     renderSidePanel()
     await waitFor(() => {
@@ -400,23 +633,33 @@ describe("SidePanelApp", () => {
   })
 
   it("shows service empty-thread hint when tab is a service site", async () => {
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { "10": 55 },
-      [PRODUCT_PAYLOAD_BY_TAB_ID]: {
-        "55": {
-          retailer: "madmuscles",
-          locale: "en-US",
-          url: "https://www.madmuscles.com/",
-          title: "Coaching",
-          reviewExcerpts: [] as string[],
-          extractedAt: "2026-04-15T12:00:00.000Z",
-        },
-      },
-    }
+    chromeMock.tabsQuery.mockResolvedValue([{ id: 77, url: "https://www.madmuscles.com/" }])
+    chromeMock.tabsGet.mockResolvedValue({
+      id: 77,
+      url: "https://www.madmuscles.com/",
+      title: "Madmuscles"
+    })
+    chromeMock.tabsSendMessage.mockImplementation(
+      (_tabId: number, _msg: unknown, cb?: (r: unknown) => void) => {
+        if (typeof cb === "function") {
+          cb({
+            ok: true,
+            product: {
+              retailer: "madmuscles",
+              locale: "en-US",
+              url: "https://www.madmuscles.com/",
+              title: "Coaching",
+              reviewExcerpts: [] as string[],
+              extractedAt: "2026-04-15T12:00:00.000Z"
+            }
+          })
+        }
+      }
+    )
     stored[SITE_EXTRACTOR_CONFIG_JSON_KEY] = JSON.stringify(DEFAULT_SITE_EXTRACTOR_CONFIG)
     renderSidePanel()
     await waitFor(() => {
-      expect(screen.getByText(/Get Review Insight on this service page/i)).toBeInTheDocument()
+      expect(screen.getByText(/Get Review Insight for web research on this service page/i)).toBeInTheDocument()
     })
   })
 })

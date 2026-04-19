@@ -21,8 +21,7 @@ export default defineManifest({
   version: '0.0.1',
   description: 'Smart Shopper companion — development build',
   action: {
-    default_title: 'ShopFriend',
-    default_popup: 'src/popup/index.html'
+    default_title: 'ShopFriend'
   },
   side_panel: {
     default_path: 'src/sidepanel/index.html'
@@ -58,7 +57,7 @@ export default defineManifest({
    */
   web_accessible_resources: [
     {
-      resources: ['assets/*.js'],
+      resources: ['assets/*.js', 'assets/*.css'],
       matches: ['<all_urls>']
     }
   ]

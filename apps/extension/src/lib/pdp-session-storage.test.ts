@@ -1,12 +1,6 @@
 import type { ProductPayload } from '@shopfriend/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import {
-  getStoredProductPayloadForTab,
-  INSIGHT_CONTEXT_TAB_BY_WINDOW_ID,
-  mergeProductPayloadForTab,
-  PRODUCT_PAYLOAD_BY_TAB_ID,
-  resolveInsightSourceTabId
-} from './pdp-session-storage'
+import { getStoredProductPayloadForTab, mergeProductPayloadForTab, PRODUCT_PAYLOAD_BY_TAB_ID } from './pdp-session-storage'
 import { createChromeMock } from '../test-utils/chrome-mock'
 
 const sampleProduct = (titleSuffix: string): ProductPayload => ({
@@ -44,64 +38,6 @@ describe('mergeProductPayloadForTab', () => {
     expect(out['99']).toEqual(incoming)
     expect(Object.keys(out)).toHaveLength(32)
     expect(out['99']).toBeDefined()
-  })
-})
-
-describe('resolveInsightSourceTabId', () => {
-  let chromeMock: ReturnType<typeof createChromeMock>
-  let sessionValues: Record<string, unknown>
-
-  beforeEach(() => {
-    sessionValues = {}
-    chromeMock = createChromeMock()
-    chromeMock.install()
-    chromeMock.windowsGetCurrent.mockResolvedValue({ id: 10 })
-    chromeMock.tabsQuery.mockResolvedValue([{ id: 77 }])
-    chromeMock.storageSessionGet.mockImplementation(
-      async (keys: string | string[] | Record<string, unknown> | null | undefined) => {
-        const names =
-          keys === null || keys === undefined
-            ? Object.keys(sessionValues)
-            : typeof keys === 'string'
-              ? [keys]
-              : Array.isArray(keys)
-                ? keys
-                : typeof keys === 'object'
-                  ? Object.keys(keys)
-                  : []
-        const out: Record<string, unknown> = {}
-        for (const n of names) {
-          if (Object.prototype.hasOwnProperty.call(sessionValues, n)) {
-            out[n] = sessionValues[n]
-          }
-        }
-        return out
-      }
-    )
-  })
-
-  afterEach(() => {
-    chromeMock.remove()
-  })
-
-  it('returns tab id from insight context when window has an entry', async () => {
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { '10': 55 }
-    }
-    await expect(resolveInsightSourceTabId()).resolves.toBe(55)
-  })
-
-  it('falls back to active tab when insight context has no entry for this window', async () => {
-    sessionValues = {
-      [INSIGHT_CONTEXT_TAB_BY_WINDOW_ID]: { '99': 1 }
-    }
-    await expect(resolveInsightSourceTabId()).resolves.toBe(77)
-  })
-
-  it('returns active tab when windows.getCurrent throws', async () => {
-    chromeMock.windowsGetCurrent.mockRejectedValue(new Error('no window'))
-    sessionValues = {}
-    await expect(resolveInsightSourceTabId()).resolves.toBe(77)
   })
 })
 
