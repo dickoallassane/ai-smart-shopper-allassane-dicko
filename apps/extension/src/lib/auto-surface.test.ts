@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { siteExtractorSiteSchema } from './site-extractor-config'
 import {
-  autoSurfaceShownOnceStorageKey,
+  autoSurfaceShownInMemoryKey,
   shouldOfferAutoSurfaceForMatchedSite
 } from './auto-surface'
 
@@ -72,10 +72,10 @@ describe('shouldOfferAutoSurfaceForMatchedSite', () => {
   })
 })
 
-describe('autoSurfaceShownOnceStorageKey', () => {
-  it('builds a stable key per site + full href', () => {
-    expect(autoSurfaceShownOnceStorageKey('amazon', 'https://www.amazon.com/dp/B012345678')).toBe(
-      'shopfriend:autoSurface:shown:amazon:https://www.amazon.com/dp/B012345678'
+describe('autoSurfaceShownInMemoryKey', () => {
+  it('builds a stable in-memory key per site + full href', () => {
+    expect(autoSurfaceShownInMemoryKey('amazon', 'https://www.amazon.com/dp/B012345678')).toBe(
+      'shopfriend:autoSurface:shown:in-memory:amazon:https://www.amazon.com/dp/B012345678'
     )
   })
 })

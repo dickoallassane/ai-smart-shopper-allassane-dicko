@@ -33,7 +33,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content-script.ts-loader-BlTEdd9m.js"
+        "assets/content-script.ts-loader-Dp-SywGy.js"
       ],
       "matches": [
         "https://shopfriend-build-placeholder.invalid/*"
@@ -58,9 +58,9 @@
       ],
       "resources": [
         "assets/extension-ui-CnmtFWL5.css",
-        "assets/insight-session-context-CwgEjDEn.js",
+        "assets/insight-session-context-uVMxLHBh.js",
         "assets/request-product-snapshot-CU7nJuHv.js",
-        "assets/content-script.ts-CRyKXfIw.js"
+        "assets/content-script.ts-_ypKLt0G.js"
       ],
       "use_dynamic_url": false
     }
