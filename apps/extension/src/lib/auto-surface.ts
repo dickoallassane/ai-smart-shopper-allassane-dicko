@@ -5,6 +5,10 @@ import type { SiteExtractorSite } from './site-extractor-config'
 export const autoSurfaceDismissStorageKey = (siteId: string, href: string): string =>
   `shopfriend:autoSurface:dismissed:${siteId}:${href}`
 
+/** Session show key: ensure auto-surface mounts only once per site + full URL per tab session. */
+export const autoSurfaceShownOnceStorageKey = (siteId: string, href: string): string =>
+  `shopfriend:autoSurface:shown:${siteId}:${href}`
+
 /**
  * Site must already match host + PDP patterns (`findSiteForLocation`).
  * Returns whether to show the in-page auto-surface overlay.

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { siteExtractorSiteSchema } from './site-extractor-config'
-import { shouldOfferAutoSurfaceForMatchedSite } from './auto-surface'
+import {
+  autoSurfaceShownOnceStorageKey,
+  shouldOfferAutoSurfaceForMatchedSite
+} from './auto-surface'
 
 const retailSiteBase = {
   id: 'demo',
@@ -66,5 +69,13 @@ describe('shouldOfferAutoSurfaceForMatchedSite', () => {
         hostname: 'example.com',
       })
     ).toBe(true)
+  })
+})
+
+describe('autoSurfaceShownOnceStorageKey', () => {
+  it('builds a stable key per site + full href', () => {
+    expect(autoSurfaceShownOnceStorageKey('amazon', 'https://www.amazon.com/dp/B012345678')).toBe(
+      'shopfriend:autoSurface:shown:amazon:https://www.amazon.com/dp/B012345678'
+    )
   })
 })
