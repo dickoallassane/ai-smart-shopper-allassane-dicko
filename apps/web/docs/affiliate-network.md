@@ -9,6 +9,12 @@ ShopFriend’s **Next.js server** can call the **Affiliate.com Product API** dur
 - **Output:** A bounded list of offers mapped to `affiliateMatches` on the insight response (merchant, network, display price, **tracked `clickUrl`**, optional retailer **`directUrl`** when the API provides it).
 - **Security:** The API key is **never** sent to the browser; only the Next server reads env vars.
 
+## Development behavior (temporary)
+
+- Same-retailer (same-domain) filtering is currently **disabled** in `searchAffiliateProducts` for development.
+- Reason: it was too difficult to find Affiliate.com responses that include enough cross-retailer alternatives while validating the full extension flow.
+- The filter logic is preserved in helper functions and can be re-enabled later.
+
 ## Environment variables
 
 | Variable | Required | Description |

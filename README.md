@@ -66,6 +66,8 @@ cp apps/web/.env.example apps/web/.env.local
 - Bright Data — `BRIGHT_DATA_API_TOKEN`
 - Affiliate product search — `AFFILIATE_NETWORKS_`* ([apps/web/docs/affiliate-network.md](apps/web/docs/affiliate-network.md))
 
+Development note: same-retailer (same-domain) affiliate offer filtering is temporarily disabled so price cards still appear while affiliate catalog alternatives are sparse on Affiliate.com.
+
 Build the extension with `VITE_SHOPFRIEND_API_ORIGIN` (e.g. `http://localhost:3000`) in `apps/extension/.env` so the service worker can reach the BFF.
 
 ```bash

@@ -9,12 +9,9 @@ import { isSameRegistrableDomainAsProduct } from "./same-retail-domain"
 
 const AFFILIATE_PATH = "/v1/products"
 const MAX_TITLE_LEN = 200
-/** Rows to request from Affiliate API (higher than UI cap so same-domain rows can be skipped). */
+/** Rows to request from Affiliate API before shaping/capping. */
 const PER_PAGE = 15
 const MAX_MATCHES_RETURNED = 2
-
-const SAME_RETAILER_ONLY_LIMITATION =
-  "Affiliate search only returned offers on the same retailer as the current page."
 
 const networksBodySchema = z.record(
   z.string().min(1),
@@ -287,6 +284,18 @@ export type AffiliateSearchResult = {
 }
 
 /**
+ * Development toggle: temporarily disable same-retailer suppression so we can validate end-to-end
+ * affiliate integrations even when alternative merchants are sparse.
+ */
+export const shouldFilterSameRetailerOffers = (): boolean => false
+
+/** Future hook when same-retailer filtering is re-enabled. Intentionally not called for now. */
+export const isSameRetailerOfferAsProduct = (
+  productUrl: string,
+  match: Pick<AffiliateMatch, "clickUrl" | "directUrl">
+): boolean => isSameRegistrableDomainAsProduct(productUrl, match)
+
+/**
  * Calls Affiliate.com Product API search. Returns matches and/or a limitation line on failure.
  * Skips entirely when API key or base URL is unset.
  */
@@ -363,14 +372,9 @@ export const searchAffiliateProducts = async (
     )
 
     const matches: AffiliateMatch[] = []
-    let skippedSameRetailer = 0
     for (const row of rawRows) {
       const mapped = mapRowToMatch(row, affiliateId)
       if (!mapped) {
-        continue
-      }
-      if (isSameRegistrableDomainAsProduct(request.product.url, mapped)) {
-        skippedSameRetailer += 1
         continue
       }
       matches.push(mapped)
@@ -381,9 +385,6 @@ export const searchAffiliateProducts = async (
 
     if (matches.length > 0) {
       return { matches: matches.slice(0, MAX_MATCHES_RETURNED) }
-    }
-    if (skippedSameRetailer > 0) {
-      return { limitation: SAME_RETAILER_ONLY_LIMITATION }
     }
     return {}
   } catch (error) {

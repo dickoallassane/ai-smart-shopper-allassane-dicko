@@ -13,7 +13,7 @@ This document summarizes what was delivered for the **Smart Shopper** course bri
 - **Auto panel on match** — When auto-surface is on and the page matches your URL/domain rules, ShopFriend can show the compact panel without an extra click.
 - **Chrome side panel** — Full-height companion UI in Chrome’s native side panel for reading longer insight threads and settings.
 - **Extensible domains** — Site list and extractors live in extension storage so you can add more retailers over time (not locked to a single host in code).
-- **Price comparison** — Uses the **Affiliate.com**-style product search API (when configured) to suggest comparable offers with outbound links.
+- **Price comparison** — Uses the **Affiliate.com**-style product search API (when configured) to suggest offers with outbound links. For development, same-retailer (same-domain) suppression is currently disabled because cross-retailer alternatives were too sparse to reliably test the flow.
 - **Review insight (“get review insight”)** — Uses **Bright Data Discover** (when configured) so the user can dig into reviews, spot repeated themes, and get pointers that would otherwise mean opening many tabs; the UI is honest about what is inferred vs what is on the page.
 - **LLM layer** — When OpenAI (or compatible) env is set, the server can **summarize** structured data returned from Bright Data and related steps, and `**/api/insight/chat`** lets the user **ask follow-up questions** in a thread grounded on that context.
 
