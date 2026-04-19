@@ -64,15 +64,99 @@ const affiliateApiResponseSchema = z.object({
   data: z.array(affiliateApiRowSchema)
 })
 
+const stripBomAndTrim = (raw: string): string => {
+  const trimmed = raw.trim()
+  return trimmed.charCodeAt(0) === 0xfeff ? trimmed.slice(1) : trimmed
+}
+
+/** Remove line/block comments while respecting JSON strings. */
+const stripJsonCommentsLoose = (input: string): string => {
+  let out = ""
+  let i = 0
+  let inString = false
+  let escape = false
+  while (i < input.length) {
+    const c = input[i]!
+    if (escape) {
+      out += c
+      escape = false
+      i += 1
+      continue
+    }
+    if (inString) {
+      if (c === "\\") {
+        escape = true
+      } else if (c === '"') {
+        inString = false
+      }
+      out += c
+      i += 1
+      continue
+    }
+    if (c === '"') {
+      inString = true
+      out += c
+      i += 1
+      continue
+    }
+    if (c === "/" && input[i + 1] === "/") {
+      i += 2
+      while (i < input.length && input[i] !== "\n" && input[i] !== "\r") i += 1
+      continue
+    }
+    if (c === "/" && input[i + 1] === "*") {
+      i += 2
+      while (i < input.length - 1) {
+        if (input[i] === "*" && input[i + 1] === "/") {
+          i += 2
+          break
+        }
+        i += 1
+      }
+      continue
+    }
+    out += c
+    i += 1
+  }
+  return out
+}
+
+const snippetForLog = (raw: string, max = 120): string => {
+  const s = raw.replace(/\s+/g, " ").trim()
+  return s.length <= max ? s : `${s.slice(0, max)}…`
+}
+
 const parseNetworksJson = (raw: string | undefined): z.infer<typeof networksBodySchema> | undefined => {
   if (!raw?.trim()) {
     return undefined
   }
+  const normalized = stripJsonCommentsLoose(stripBomAndTrim(raw)).trim()
+  if (!normalized) {
+    console.warn("[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON empty after trimming/comments; ignoring")
+    return undefined
+  }
   try {
-    const parsed: unknown = JSON.parse(raw)
-    return networksBodySchema.parse(parsed)
-  } catch {
-    console.warn("[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON is invalid JSON or schema; ignoring")
+    const parsed: unknown = JSON.parse(normalized)
+    const validated = networksBodySchema.safeParse(parsed)
+    if (!validated.success) {
+      console.warn(
+        "[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON schema validation failed; ignoring.",
+        "issues:",
+        JSON.stringify(validated.error.flatten()),
+        "| snippet:",
+        snippetForLog(normalized)
+      )
+      return undefined
+    }
+    return validated.data
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(
+      "[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON JSON.parse failed:",
+      message,
+      "| snippet:",
+      snippetForLog(normalized)
+    )
     return undefined
   }
 }
