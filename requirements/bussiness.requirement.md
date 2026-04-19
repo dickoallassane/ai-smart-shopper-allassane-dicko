@@ -47,7 +47,7 @@ Statuses are **product** statuses for the hackathon slice (not legal sign-off).
 | R4  | Insight latency is acceptable for browsing (**rough target < ~10s** or explicit async): **loading**, **cancel**, **hard timeout** (e.g. 12–15s), **retry**, short **cache** keyed by tab + URL.                                                                                                                                                | Must-have                    |
 | R5  | **Privacy posture** is understandable (what leaves the device, if anything): **first-run + settings** “Data handling (demo)” copy; **disable LLM** path.                                                                                                                                                                                       | Must-have                    |
 | R6  | **Honest limitations** when data is missing or ambiguous (no fabricated competitors/prices); **explicit uncertainty** in UI for experimental/beta modules; **easy removal** — user can **dismiss** major cards for the session and **hide** experimental modules persistently via settings **without uninstalling** the extension.             | Must-have                    |
-| R7  | MVP is **demoable to a stranger** in under 60 seconds **and** the companion stays **discoverable** during shopping by supporting **both a Chrome Side Panel experience and a toolbar Popup** (so the user is not dependent on remembering to open only one surface).                                                                           | Core goal                    |
+| R7  | MVP is **demoable to a stranger** in under 60 seconds **and** the companion stays **discoverable** during shopping by supporting **both a Chrome Side Panel experience and a compact toolbar-driven surface** (in-page shadow panel and/or action flow; so the user is not dependent on remembering to open only one surface).                                                                           | Core goal                    |
 | R8  | Works for **one chosen retailer + locale** first (**Amazon.com** PDP for v1).                                                                                                                                                                                                                                                                  | Must-have                    |
 
 
@@ -57,8 +57,8 @@ Statuses are **product** statuses for the hackathon slice (not legal sign-off).
 
 ### 5.1 Surfaces and discovery (A1, A1.1, R7)
 
-- **Dual surfaces:** **Side Panel** (primary reading) + **toolbar Popup** (compact entry); same **insight session** state where feasible.
-- **Popup default:** toolbar click opens **Popup**; user can open **Side Panel** from the Popup (explicit control satisfies dual-surface discovery without conflicting Chrome defaults).
+- **Dual surfaces:** **Side Panel** (deep reading) + **in-page shadow panel** (compact entry from toolbar or auto-surface); same **insight session** state where feasible.
+- **Toolbar default:** no manifest `default_popup`; `chrome.action.onClicked` messages the content script to mount the **shadow panel**, with **Side Panel** as fallback when messaging is unavailable. User can open **Side Panel** from the compact UI for explicit dual-surface discovery.
 - **Auto-surface (optional, hackathon):** stored **domain allowlist + URL keyword/pattern**; **default ON** with **prominent disable**; validate `**chrome.action.openPopup()`** (Chrome **127+** notes in shaping) vs `**chrome.sidePanel.open()`** user-gesture constraints. Treat aggressive auto-open as a **UX risk** to validate in dogfood.
 
 ### 5.2 Page intelligence (A2, R1)
@@ -170,30 +170,32 @@ flowchart LR
   PDP[Amazon_PDP]
   CS[ContentScript]
   SW[ServiceWorker]
-  Popup[Popup_UI]
-  SP[SidePanel_UI]
-  LLM[LLM_adapter_optional]
-  Price[PriceSignalsAdapter_optional]
+  Panel[In_page_shadow_panel]
+  SP[Side_panel]
+  API[Nextjs_BFF]
+  LLM[LLM_optional]
+  Price[Price_signals_optional]
 
   PDP --> CS
   CS -->|ProductPayload| SW
-  SW --> Popup
+  SW --> Panel
   SW --> SP
-  SW --> LLM
-  SW --> Price
+  SW -->|POST /api/insight| API
+  API --> LLM
+  API --> Price
 ```
 
 
 
-- **On-device:** classification + bounded extraction → `**ProductPayload`**.
-- **Off-device (optional):** LLM adapter returns **JSON with citations + verify URLs** where applicable; **keys never ship in the client** for production posture (hackathon may use serverless stub; document in disclosure).
+- **On-device:** classification + bounded extraction → `**ProductPayload`**; UI in shadow panel or side panel talks to the service worker only.
+- **Off-device:** the **Next.js BFF** calls optional **LLM** and **vendor pricing** adapters; **keys never ship in the extension** (production posture).
 - **A9 (optional):** vendor adapter returns **provenance** for every surfaced row.
 
 ---
 
 ## 11. Success criteria (demo script, ~60 seconds)
 
-1. Open an **Amazon.com** PDP → open **Popup** → open **Side Panel** from explicit control.
+1. Open an **Amazon.com** PDP → use **toolbar action** (in-page shadow panel or side-panel fallback) → open **Side Panel** from explicit control when needed.
 2. First run → **Data handling** → **Continue** or **Disable LLM**.
 3. Non-PDP → **Unsupported**; PDP → **Extracting → Insight** with **citations** and verify paths per **R2**.
 4. **Returns** card → checklist + link-out opens retailer context in a new tab.
