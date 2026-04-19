@@ -4,8 +4,7 @@
   "version": "0.0.1",
   "description": "Smart Shopper companion — development build",
   "action": {
-    "default_title": "ShopFriend",
-    "default_popup": "src/popup/index.html"
+    "default_title": "ShopFriend"
   },
   "side_panel": {
     "default_path": "src/sidepanel/index.html"
@@ -34,7 +33,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content-script.ts-loader-KGvKj8y8.js"
+        "assets/content-script.ts-loader-BQyIn98B.js"
       ],
       "matches": [
         "https://shopfriend-build-placeholder.invalid/*"
@@ -48,7 +47,8 @@
         "<all_urls>"
       ],
       "resources": [
-        "assets/*.js"
+        "assets/*.js",
+        "assets/*.css"
       ],
       "use_dynamic_url": false
     },
@@ -57,9 +57,10 @@
         "https://shopfriend-build-placeholder.invalid/*"
       ],
       "resources": [
-        "assets/shopfriend-messages-CIgJwF2g.js",
-        "assets/site-extractor-config-B9BecTau.js",
-        "assets/content-script.ts-C2Lb_QBf.js"
+        "assets/extension-ui-CnaP4qrn.css",
+        "assets/insight-session-context-CwgEjDEn.js",
+        "assets/request-product-snapshot-CU7nJuHv.js",
+        "assets/content-script.ts-CEFI_cjR.js"
       ],
       "use_dynamic_url": false
     }

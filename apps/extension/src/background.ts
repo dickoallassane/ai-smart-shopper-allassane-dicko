@@ -6,6 +6,8 @@ import type {
   ProductPayload
 } from '@shopfriend/shared'
 import { PRODUCT_PAYLOAD_BY_TAB_ID, mergeProductPayloadForTab, type ProductPayloadByTabId } from './lib/pdp-session-storage'
+import { GET_SHOPPER_TAB_ID, SHOW_SHOPFRIEND_PAGE_POPUP } from './lib/shopfriend-messages'
+import { isRestrictedBrowserUrl } from './lib/request-product-snapshot'
 import {
   defaultSiteExtractorConfigJson,
   parseSiteExtractorConfigJson,
@@ -177,6 +179,11 @@ const syncRegisteredContentScripts = async (): Promise<void> => {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === GET_SHOPPER_TAB_ID) {
+    sendResponse({ tabId: sender.tab?.id })
+    return undefined
+  }
+
   if (message?.type === 'OPEN_SIDE_PANEL') {
     const open = async () => {
       const tabId = message.tabId as number | undefined
@@ -291,3 +298,30 @@ void (async () => {
   await seedSiteConfigIfEmpty()
   await syncRegisteredContentScripts()
 })()
+
+const handleBrowserActionClick = async (tab: chrome.tabs.Tab): Promise<void> => {
+  if (tab.id === undefined) {
+    return
+  }
+  if (!tab.url || isRestrictedBrowserUrl(tab.url)) {
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id })
+    } catch {
+      /* ignore */
+    }
+    return
+  }
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: SHOW_SHOPFRIEND_PAGE_POPUP, tabId: tab.id })
+  } catch {
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id })
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  void handleBrowserActionClick(tab)
+})

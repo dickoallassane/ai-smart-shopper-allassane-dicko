@@ -61,6 +61,27 @@ type ChatMessage =
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
+const ChatThreadPendingIndicator = () => (
+  <div
+    className="sf-chat-assistant flex items-center gap-2 py-2 text-sm text-sf-on-surface-variant"
+    role="status"
+    aria-live="polite"
+    aria-label="Waiting for response"
+  >
+    <span className="sr-only">Waiting for response</span>
+    <span className="flex items-center gap-1" aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="inline-block h-2 w-2 rounded-full bg-sf-primary opacity-80 motion-safe:animate-bounce"
+          style={{ animationDelay: `${i * 140}ms`, animationDuration: '0.6s' }}
+        />
+      ))}
+    </span>
+    <span className="text-xs">Loading…</span>
+  </div>
+)
+
 const buildCheckPriceUserText = (payload: InsightRequest): string => {
   const title = payload.product.title
   const pricePhrase = payload.product.displayedPrice?.trim() || 'the listed price'
@@ -512,9 +533,8 @@ export const SidePanelApp = () => {
     setPanelView('settings')
   }
 
-  const handleLogout = () => {
-    console.debug('[ShopFriend] Logout (stub until auth)')
-  }
+  const isThreadPending =
+    chatMutation.isPending || priceMutation.isPending || reviewMutation.isPending
 
   if (!hydrated) {
     return (
@@ -552,14 +572,6 @@ export const SidePanelApp = () => {
             >
               Settings
             </button>
-            <button
-              type="button"
-              className="sf-btn-secondary px-3 py-1.5 text-xs"
-              onClick={handleLogout}
-              aria-label="Log out (coming soon)"
-            >
-              Logout
-            </button>
           </div>
         </div>
       </header>
@@ -577,7 +589,7 @@ export const SidePanelApp = () => {
                 aria-relevant="additions"
                 aria-live="polite"
               >
-                {messages.length === 0 ? (
+                {messages.length === 0 && !isThreadPending ? (
                   <p className="sf-text-muted px-1 py-2 text-center">
                     {!activeTabSupported
                       ? 'No messages yet — Get Review Insight can search the web for this tab’s domain. Open a supported store tab to use Check Price or richer on-page product insight.'
@@ -586,7 +598,8 @@ export const SidePanelApp = () => {
                         : 'No messages yet — try Check Price or Get Review Insight on a product tab.'}
                   </p>
                 ) : (
-                  messages.map((m) => {
+                  <>
+                  {messages.map((m) => {
                     if (m.role === 'user') {
                       return (
                         <div key={m.id} className="sf-chat-user">
@@ -669,7 +682,9 @@ export const SidePanelApp = () => {
                         </div>
                       </div>
                     )
-                  })
+                  })}
+                  {isThreadPending ? <ChatThreadPendingIndicator /> : null}
+                  </>
                 )}
               </div>
               {messages.length > 0 ? (
