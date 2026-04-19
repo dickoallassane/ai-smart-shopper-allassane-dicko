@@ -12,7 +12,7 @@ This document describes **how the main parts talk to each other** for the Shape 
 | **Retailer page (Amazon PDP)**        | Source DOM/text for bounded `**ProductPayload`** extraction.                                                                                                                                                 |
 | **Content script**                    | Runs in page context: classification hints, bounded scrape/extract, **no secrets**.                                                                                                                          |
 | **Service worker (background)**       | Orchestration, `fetch` to **Next.js**, caching/timeout/cancel, message hub to UI.                                                                                                                            |
-| **Extension UI (Popup + Side Panel)** | Presents states, disclosures, insights, verify links; sends user actions to the service worker.                                                                                                              |
+| **Extension UI (in-page + side panel)** | **In-page:** closed shadow root on the PDP hosts the same React surface as the legacy toolbar popup (`PopupPanel`). **Side panel:** full Chrome side panel UI. Both send actions to the service worker. **Manifest:** no `default_popup`; toolbar uses `chrome.action.onClicked` → content script message → mount or side-panel fallback. |
 | **Next.js server**                    | **Single backend boundary**: auth/rate limits (as needed), calls **LLM** and **optional Bright Data adapter**, returns **structured JSON + provenance**; holds **API keys** (never in the extension bundle). |
 | **LLM provider**                      | One (or batched) completion for grounded summaries with **citations** to on-page excerpts only (per business doc **A5**).                                                                                    |
 | **Bright Data (or equivalent)**       | **Optional** vendor pipeline for **A9** beta pricing signals; server-side only; every row needs **source URL, timestamp, caveat** in the API response.                                                       |
@@ -31,7 +31,7 @@ sequenceDiagram
   participant PDP as Amazon PDP
   participant CS as Content script
   participant SW as Service worker
-  participant UI as Extension UI
+  participant ExtUI as Extension_UI_shadow_or_sidepanel
   participant API as Next.js server
   participant LLM as LLM provider
   participant BD as Bright Data API
@@ -39,7 +39,10 @@ sequenceDiagram
   User->>PDP: Navigate / view product
   CS->>PDP: Read bounded DOM (ProductPayload)
   CS->>SW: productPayload + tab metadata
-  UI->>SW: Request insight job
+  opt Auto_surface matched PDP
+    CS->>CS: Mount shadow host plus PopupPanel
+  end
+  ExtUI->>SW: Request insight job
   SW->>API: POST /api/insight (payload, flags)
   par LLM path
     API->>LLM: Grounded completion (citations)
@@ -49,8 +52,8 @@ sequenceDiagram
     BD-->>API: Rows + provenance
   end
   API-->>SW: Combined response + limitations
-  SW-->>UI: Insight ready (or error / timeout)
-  UI-->>User: Cards + verify links
+  SW-->>ExtUI: Insight ready (or error / timeout)
+  ExtUI-->>User: Cards + verify links
 ```
 
 
@@ -64,7 +67,7 @@ flowchart LR
   subgraph client [Chrome extension]
     CS[Content script]
     SW[Service worker]
-    UI[Popup and Side Panel]
+    ExtUI[Shadow panel plus Side Panel]
   end
   PDP[(Amazon PDP)]
   API[Next.js server]
@@ -73,7 +76,7 @@ flowchart LR
 
   PDP --> CS
   CS --> SW
-  UI <--> SW
+  ExtUI <--> SW
   SW <--> API
   API --> LLM
   API -.-> BD

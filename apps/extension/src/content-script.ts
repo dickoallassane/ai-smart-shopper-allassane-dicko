@@ -3,7 +3,11 @@ import {
   buildProductPayloadFromConfig,
   findSiteForLocation
 } from './lib/build-product-payload-from-config'
-import { autoSurfaceDismissStorageKey, shouldOfferAutoSurfaceForMatchedSite } from './lib/auto-surface'
+import {
+  autoSurfaceDismissStorageKey,
+  autoSurfaceShownOnceStorageKey,
+  shouldOfferAutoSurfaceForMatchedSite
+} from './lib/auto-surface'
 import {
   AUTO_SURFACE_HOST_ID,
   mountShopFriendPagePopupIframe,
@@ -14,6 +18,7 @@ import {
   AUTO_SURFACE_GLOBALLY_DISABLED_KEY,
   SITE_EXTRACTOR_CONFIG_JSON_KEY
 } from './lib/site-extractor-config'
+import { isManualInPageOverlay } from './lib/overlay-lifecycle'
 import {
   GET_SHOPPER_TAB_ID,
   SHOPFRIEND_SNAPSHOT_PRODUCT,
@@ -87,27 +92,39 @@ const schedulePublish = () => {
   }, PUBLISH_DEBOUNCE_MS)
 }
 
+const removeAutoOverlayOnly = (): void => {
+  const host = document.getElementById(AUTO_SURFACE_HOST_ID)
+  if (isManualInPageOverlay(host)) {
+    return
+  }
+  removeAutoSurfaceOverlay()
+}
+
 const evaluateAutoSurface = async (): Promise<void> => {
   const stored = await chrome.storage.local.get(AUTO_SURFACE_GLOBALLY_DISABLED_KEY)
   if (stored[AUTO_SURFACE_GLOBALLY_DISABLED_KEY] === true) {
-    removeAutoSurfaceOverlay()
+    removeAutoOverlayOnly()
     return
   }
   const sites = await loadSitesFromStorage()
   if (!sites?.length) {
-    removeAutoSurfaceOverlay()
+    removeAutoOverlayOnly()
     return
   }
   const site = findSiteForLocation(sites, window.location)
   const href = window.location.href
   if (!site || !shouldOfferAutoSurfaceForMatchedSite(site, window.location)) {
-    removeAutoSurfaceOverlay()
+    removeAutoOverlayOnly()
     return
   }
   const dismissKey = autoSurfaceDismissStorageKey(site.id, href)
+  const shownKey = autoSurfaceShownOnceStorageKey(site.id, href)
   try {
     if (sessionStorage.getItem(dismissKey) === '1') {
-      removeAutoSurfaceOverlay()
+      removeAutoOverlayOnly()
+      return
+    }
+    if (sessionStorage.getItem(shownKey) === '1') {
       return
     }
   } catch {
@@ -115,10 +132,18 @@ const evaluateAutoSurface = async (): Promise<void> => {
   }
   const tabId = await getShopperTabId()
   if (tabId === undefined) {
-    removeAutoSurfaceOverlay()
+    removeAutoOverlayOnly()
     return
   }
   const existing = document.getElementById(AUTO_SURFACE_HOST_ID)
+  if (
+    existing instanceof HTMLElement &&
+    isManualInPageOverlay(existing) &&
+    existing.dataset.tabId === String(tabId) &&
+    existing.dataset.href === href
+  ) {
+    return
+  }
   if (
     existing?.dataset.siteId === site.id &&
     existing?.dataset.href === href &&
@@ -127,6 +152,11 @@ const evaluateAutoSurface = async (): Promise<void> => {
     return
   }
   removeAutoSurfaceOverlay()
+  try {
+    sessionStorage.setItem(shownKey, '1')
+  } catch {
+    /* sessionStorage unavailable */
+  }
   mountShopFriendPagePopupIframe({
     tabId,
     persistDismissOnClose: true,
@@ -157,7 +187,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const tabId = typeof message.tabId === 'number' ? message.tabId : undefined
     if (tabId !== undefined) {
       removeAutoSurfaceOverlay()
-      mountShopFriendPagePopupIframe({ tabId, persistDismissOnClose: false })
+      const href = window.location.href
+      mountShopFriendPagePopupIframe({
+        tabId,
+        persistDismissOnClose: false,
+        href,
+      })
+      void loadSitesFromStorage().then((sites) => {
+        const matched = sites?.length ? findSiteForLocation(sites, window.location) : undefined
+        const host = document.getElementById(AUTO_SURFACE_HOST_ID)
+        if (!host || !matched?.id || host.dataset.persistDismiss !== '0') {
+          return
+        }
+        host.dataset.siteId = matched.id
+      })
     }
     return false
   }

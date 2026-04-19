@@ -2,6 +2,8 @@
 
 Reference for **tables, relationships, RLS, and migrations**. Complements [folder-structure.requirement.md](folder-structure.requirement.md). SQL lives in [../supabase/migrations/](../supabase/migrations/).
 
+**Deployment status:** these migrations are **reference / future** work for when the product adopts **Supabase-hosted Postgres** with RLS. The current hackathon-style insight path does **not** require applying them; the ER diagram below describes the **target** data model, not a live database that every clone must provision.
+
 ---
 
 ## Principles

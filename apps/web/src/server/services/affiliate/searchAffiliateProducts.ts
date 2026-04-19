@@ -9,12 +9,9 @@ import { isSameRegistrableDomainAsProduct } from "./same-retail-domain"
 
 const AFFILIATE_PATH = "/v1/products"
 const MAX_TITLE_LEN = 200
-/** Rows to request from Affiliate API (higher than UI cap so same-domain rows can be skipped). */
+/** Rows to request from Affiliate API before shaping/capping. */
 const PER_PAGE = 15
 const MAX_MATCHES_RETURNED = 2
-
-const SAME_RETAILER_ONLY_LIMITATION =
-  "Affiliate search only returned offers on the same retailer as the current page."
 
 const networksBodySchema = z.record(
   z.string().min(1),
@@ -64,15 +61,99 @@ const affiliateApiResponseSchema = z.object({
   data: z.array(affiliateApiRowSchema)
 })
 
+const stripBomAndTrim = (raw: string): string => {
+  const trimmed = raw.trim()
+  return trimmed.charCodeAt(0) === 0xfeff ? trimmed.slice(1) : trimmed
+}
+
+/** Remove line/block comments while respecting JSON strings. */
+const stripJsonCommentsLoose = (input: string): string => {
+  let out = ""
+  let i = 0
+  let inString = false
+  let escape = false
+  while (i < input.length) {
+    const c = input[i]!
+    if (escape) {
+      out += c
+      escape = false
+      i += 1
+      continue
+    }
+    if (inString) {
+      if (c === "\\") {
+        escape = true
+      } else if (c === '"') {
+        inString = false
+      }
+      out += c
+      i += 1
+      continue
+    }
+    if (c === '"') {
+      inString = true
+      out += c
+      i += 1
+      continue
+    }
+    if (c === "/" && input[i + 1] === "/") {
+      i += 2
+      while (i < input.length && input[i] !== "\n" && input[i] !== "\r") i += 1
+      continue
+    }
+    if (c === "/" && input[i + 1] === "*") {
+      i += 2
+      while (i < input.length - 1) {
+        if (input[i] === "*" && input[i + 1] === "/") {
+          i += 2
+          break
+        }
+        i += 1
+      }
+      continue
+    }
+    out += c
+    i += 1
+  }
+  return out
+}
+
+const snippetForLog = (raw: string, max = 120): string => {
+  const s = raw.replace(/\s+/g, " ").trim()
+  return s.length <= max ? s : `${s.slice(0, max)}…`
+}
+
 const parseNetworksJson = (raw: string | undefined): z.infer<typeof networksBodySchema> | undefined => {
   if (!raw?.trim()) {
     return undefined
   }
+  const normalized = stripJsonCommentsLoose(stripBomAndTrim(raw)).trim()
+  if (!normalized) {
+    console.warn("[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON empty after trimming/comments; ignoring")
+    return undefined
+  }
   try {
-    const parsed: unknown = JSON.parse(raw)
-    return networksBodySchema.parse(parsed)
-  } catch {
-    console.warn("[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON is invalid JSON or schema; ignoring")
+    const parsed: unknown = JSON.parse(normalized)
+    const validated = networksBodySchema.safeParse(parsed)
+    if (!validated.success) {
+      console.warn(
+        "[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON schema validation failed; ignoring.",
+        "issues:",
+        JSON.stringify(validated.error.flatten()),
+        "| snippet:",
+        snippetForLog(normalized)
+      )
+      return undefined
+    }
+    return validated.data
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(
+      "[ShopFriend] AFFILIATE_NETWORKS_REQUEST_JSON JSON.parse failed:",
+      message,
+      "| snippet:",
+      snippetForLog(normalized)
+    )
     return undefined
   }
 }
@@ -203,6 +284,18 @@ export type AffiliateSearchResult = {
 }
 
 /**
+ * Development toggle: temporarily disable same-retailer suppression so we can validate end-to-end
+ * affiliate integrations even when alternative merchants are sparse.
+ */
+export const shouldFilterSameRetailerOffers = (): boolean => false
+
+/** Future hook when same-retailer filtering is re-enabled. Intentionally not called for now. */
+export const isSameRetailerOfferAsProduct = (
+  productUrl: string,
+  match: Pick<AffiliateMatch, "clickUrl" | "directUrl">
+): boolean => isSameRegistrableDomainAsProduct(productUrl, match)
+
+/**
  * Calls Affiliate.com Product API search. Returns matches and/or a limitation line on failure.
  * Skips entirely when API key or base URL is unset.
  */
@@ -279,14 +372,9 @@ export const searchAffiliateProducts = async (
     )
 
     const matches: AffiliateMatch[] = []
-    let skippedSameRetailer = 0
     for (const row of rawRows) {
       const mapped = mapRowToMatch(row, affiliateId)
       if (!mapped) {
-        continue
-      }
-      if (isSameRegistrableDomainAsProduct(request.product.url, mapped)) {
-        skippedSameRetailer += 1
         continue
       }
       matches.push(mapped)
@@ -297,9 +385,6 @@ export const searchAffiliateProducts = async (
 
     if (matches.length > 0) {
       return { matches: matches.slice(0, MAX_MATCHES_RETURNED) }
-    }
-    if (skippedSameRetailer > 0) {
-      return { limitation: SAME_RETAILER_ONLY_LIMITATION }
     }
     return {}
   } catch (error) {

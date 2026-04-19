@@ -85,7 +85,7 @@ export const PopupPanel = ({
       window.close()
       return
     }
-    onRequestClose?.({ persistDismiss: false })
+    // In-page mount: keep the chip visible; auto-surface lifecycle handles future URL changes.
   }
 
   const handleStartNowKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {

@@ -1,5 +1,7 @@
 # Extension authentication flow
 
+**Current vs production:** many local and hackathon runs omit `NEXT_PUBLIC_SUPABASE_*` in `apps/web/.env.local`. In that mode `/api/insight` typically accepts requests **without** a Bearer token until you enable strict behavior with **`SHOPFRIEND_REQUIRE_INSIGHT_AUTH=true`** and a configured Supabase project. The sections below describe the **intended production** pattern; see also [overview.md](../../../overview.md).
+
 ShopFriend keeps **LLM and vendor keys on the Next.js server**. The Chrome extension should **not** embed the Supabase **service role** key.
 
 ## Recommended flow (production)

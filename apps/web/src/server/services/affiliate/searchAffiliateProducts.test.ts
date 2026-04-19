@@ -1,6 +1,6 @@
 import { insightRequestSchema, type InsightRequest } from "@shopfriend/shared"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { searchAffiliateProducts } from "./searchAffiliateProducts"
+import { isSameRetailerOfferAsProduct, searchAffiliateProducts, shouldFilterSameRetailerOffers } from "./searchAffiliateProducts"
 
 const amazonRequest = (): InsightRequest =>
   insightRequestSchema.parse({
@@ -15,7 +15,7 @@ const amazonRequest = (): InsightRequest =>
     flags: { llmEnabled: true, pricingBetaEnabled: false, skipAffiliate: false }
   })
 
-describe("searchAffiliateProducts same-retailer filter", () => {
+describe("searchAffiliateProducts (same-retailer filter disabled for development)", () => {
   const prevKey = process.env.AFFILIATE_NETWORKS_API_KEY
   const prevBase = process.env.AFFILIATE_NETWORKS_API_BASE_URL
 
@@ -38,7 +38,7 @@ describe("searchAffiliateProducts same-retailer filter", () => {
     }
   })
 
-  it("skips rows whose direct URL is on the same domain as the PDP", async () => {
+  it("returns rows even when they are on the same retailer domain", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -84,13 +84,13 @@ describe("searchAffiliateProducts same-retailer filter", () => {
     const ac = new AbortController()
     const result = await searchAffiliateProducts(amazonRequest(), ac.signal)
 
-    expect(result.matches).toHaveLength(1)
-    expect(result.matches?.[0]?.merchantName).toBe("Walmart")
-    expect(result.matches?.[0]?.directUrl).toContain("walmart.com")
+    expect(result.matches).toHaveLength(2)
+    expect(result.matches?.[0]?.directUrl).toContain("amazon.com")
+    expect(result.matches?.[1]?.directUrl).toContain("amazon.com")
     expect(result.limitation).toBeUndefined()
   })
 
-  it("returns a limitation when every mappable row is the same retailer", async () => {
+  it("returns same-retailer matches instead of limitation when only same domain rows exist", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -116,7 +116,18 @@ describe("searchAffiliateProducts same-retailer filter", () => {
     const ac = new AbortController()
     const result = await searchAffiliateProducts(amazonRequest(), ac.signal)
 
-    expect(result.matches).toBeUndefined()
-    expect(result.limitation).toMatch(/same retailer/i)
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches?.[0]?.directUrl).toContain("amazon.com")
+    expect(result.limitation).toBeUndefined()
+  })
+
+  it("keeps same-retailer helper available but disabled by flag", () => {
+    expect(shouldFilterSameRetailerOffers()).toBe(false)
+    expect(
+      isSameRetailerOfferAsProduct("https://www.amazon.com/dp/B09MQLP33J", {
+        directUrl: "https://amazon.com/gp/product/X",
+        clickUrl: "https://track.test/a2"
+      })
+    ).toBe(true)
   })
 })
