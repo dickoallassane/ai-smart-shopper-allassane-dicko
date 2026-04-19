@@ -62,6 +62,40 @@ describe('findSiteForLocation', () => {
     }
     expect(findSiteForLocation(DEFAULT_SITE_EXTRACTOR_CONFIG.sites, loc)).toBeUndefined()
   })
+
+  it('matches amazon dp URL with ref/query params from detail page', () => {
+    const href =
+      'https://www.amazon.com/dp/B09MQLP33J/ref=sspa_dk_detail_5?pd_rd_i=B09MQLP33J&pd_rd_w=MSx2Z&content-id=amzn1.sym.85ceacba-39b1-4243-8f28-2e014f9512c7&pf_rd_p=85ceacba-39b1-4243-8f28-2e014f9512c7&pf_rd_r=NNYGDYSRTKKZFWGEQ2TA&pd_rd_wg=YzUaL&pd_rd_r=02ceda99-fb67-4557-8b2c-f960249a62be&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWxfdGhlbWF0aWM&th=1'
+    const loc = {
+      hostname: 'www.amazon.com',
+      pathname: '/dp/B09MQLP33J/ref=sspa_dk_detail_5',
+      href,
+    }
+    const site = findSiteForLocation(DEFAULT_SITE_EXTRACTOR_CONFIG.sites, loc)
+    expect(site?.id).toBe('amazon')
+  })
+
+  it('matches amazon gp/product URL with query params', () => {
+    const href =
+      'https://www.amazon.com/gp/product/B0CT5GHZ8Q/ref=ox_sc_act_title_2?smid=A3Q58RZI91UC7I&th=1'
+    const loc = {
+      hostname: 'www.amazon.com',
+      pathname: '/gp/product/B0CT5GHZ8Q/ref=ox_sc_act_title_2',
+      href,
+    }
+    const site = findSiteForLocation(DEFAULT_SITE_EXTRACTOR_CONFIG.sites, loc)
+    expect(site?.id).toBe('amazon')
+  })
+
+  it('matches madmuscles on root domain itself', () => {
+    const loc = {
+      hostname: 'madmuscles.com',
+      pathname: '/',
+      href: 'https://madmuscles.com/',
+    }
+    const site = findSiteForLocation(DEFAULT_SITE_EXTRACTOR_CONFIG.sites, loc)
+    expect(site?.id).toBe('madmuscles')
+  })
 })
 
 describe('waitForSelector', () => {

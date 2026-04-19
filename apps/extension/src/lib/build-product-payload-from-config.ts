@@ -26,19 +26,24 @@ const PAYLOAD_LIMITS = {
 } as const
 
 type TruncateContext = { field: string; selector?: string }
+const seenTruncationWarnings = new Set<string>()
 
 const clampWithLog = (raw: string, maxLen: number, ctx: TruncateContext): string => {
   const t = raw.replace(/\s+/g, ' ').trim()
   if (t.length <= maxLen) {
     return t
   }
-  console.warn('[ShopFriend][extract] Truncated DOM text to fit schema', {
-    field: ctx.field,
-    selector: ctx.selector,
-    rawChars: t.length,
-    maxLen,
-    preview: `${t.slice(0, 80)}${t.length > 80 ? '…' : ''}`
-  })
+  const warnKey = `${ctx.field}|${ctx.selector ?? ''}|${maxLen}`
+  if (!seenTruncationWarnings.has(warnKey)) {
+    seenTruncationWarnings.add(warnKey)
+    console.warn('[ShopFriend][extract] Truncated DOM text to fit schema', {
+      field: ctx.field,
+      selector: ctx.selector,
+      rawChars: t.length,
+      maxLen,
+      preview: `${t.slice(0, 80)}${t.length > 80 ? '…' : ''}`
+    })
+  }
   return t.slice(0, maxLen)
 }
 

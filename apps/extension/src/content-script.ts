@@ -5,7 +5,7 @@ import {
 } from './lib/build-product-payload-from-config'
 import {
   autoSurfaceDismissStorageKey,
-  autoSurfaceShownOnceStorageKey,
+  autoSurfaceShownInMemoryKey,
   shouldOfferAutoSurfaceForMatchedSite
 } from './lib/auto-surface'
 import {
@@ -27,9 +27,36 @@ import {
 
 const PUBLISH_DEBOUNCE_MS = 320
 const AUTOSURFACE_DEBOUNCE_MS = 400
+const MUTATION_IGNORED_LOG_THROTTLE_MS = 10_000
 
 let publishTimer: ReturnType<typeof setTimeout> | null = null
 let autoSurfaceTimer: ReturnType<typeof setTimeout> | null = null
+let lastKnownHref = window.location.href
+const shownAutoSurfaceThisPageLoad = new Set<string>()
+const throttledLogLastAtByKey = new Map<string, number>()
+
+const SHOPFRIEND_LOG_PREFIX = '[ShopFriend]'
+const logAutoSurface = (message: string, details?: Record<string, unknown>): void => {
+  if (details) {
+    console.info(`${SHOPFRIEND_LOG_PREFIX} [autoSurface] ${message}`, details)
+    return
+  }
+  console.info(`${SHOPFRIEND_LOG_PREFIX} [autoSurface] ${message}`)
+}
+
+const logAutoSurfaceThrottled = (
+  throttleKey: string,
+  message: string,
+  details?: Record<string, unknown>
+): void => {
+  const now = Date.now()
+  const last = throttledLogLastAtByKey.get(throttleKey) ?? 0
+  if (now - last < MUTATION_IGNORED_LOG_THROTTLE_MS) {
+    return
+  }
+  throttledLogLastAtByKey.set(throttleKey, now)
+  logAutoSurface(message, details)
+}
 
 type SnapshotResult =
   | { ok: true; product: ProductPayload }
@@ -86,10 +113,27 @@ const schedulePublish = () => {
   if (publishTimer !== null) {
     clearTimeout(publishTimer)
   }
+  console.info(`${SHOPFRIEND_LOG_PREFIX} [publish] schedulePublish queued`, {
+    href: window.location.href,
+    debounceMs: PUBLISH_DEBOUNCE_MS,
+  })
   publishTimer = setTimeout(() => {
     publishTimer = null
+    console.info(`${SHOPFRIEND_LOG_PREFIX} [publish] run publishPayload`, { href: window.location.href })
     void publishPayload()
   }, PUBLISH_DEBOUNCE_MS)
+}
+
+const scheduleForUrlChangeIfNeeded = (): void => {
+  const href = window.location.href
+  if (href === lastKnownHref) {
+    logAutoSurfaceThrottled(`mutation-ignored:${href}`, 'mutation ignored (href unchanged)', { href })
+    return
+  }
+  logAutoSurface('mutation detected href change', { from: lastKnownHref, to: href })
+  lastKnownHref = href
+  schedulePublish()
+  scheduleAutoSurface()
 }
 
 const removeAutoOverlayOnly = (): void => {
@@ -101,40 +145,53 @@ const removeAutoOverlayOnly = (): void => {
 }
 
 const evaluateAutoSurface = async (): Promise<void> => {
+  logAutoSurface('evaluate start', { href: window.location.href })
   const stored = await chrome.storage.local.get(AUTO_SURFACE_GLOBALLY_DISABLED_KEY)
   if (stored[AUTO_SURFACE_GLOBALLY_DISABLED_KEY] === true) {
+    logAutoSurface('skip: globally disabled')
     removeAutoOverlayOnly()
     return
   }
   const sites = await loadSitesFromStorage()
   if (!sites?.length) {
+    logAutoSurface('skip: no valid site config loaded')
     removeAutoOverlayOnly()
     return
   }
   const site = findSiteForLocation(sites, window.location)
   const href = window.location.href
   if (!site || !shouldOfferAutoSurfaceForMatchedSite(site, window.location)) {
+    logAutoSurface('skip: site or autoSurface.urlRegex did not match', {
+      matchedSiteId: site?.id,
+      href,
+    })
     removeAutoOverlayOnly()
     return
   }
+  logAutoSurface('site matched', { siteId: site.id, href })
   const dismissKey = autoSurfaceDismissStorageKey(site.id, href)
-  const shownKey = autoSurfaceShownOnceStorageKey(site.id, href)
+  const shownKey = autoSurfaceShownInMemoryKey(site.id, href)
   try {
     if (sessionStorage.getItem(dismissKey) === '1') {
+      logAutoSurface('skip: dismissed for this site+href', { dismissKey })
       removeAutoOverlayOnly()
       return
     }
-    if (sessionStorage.getItem(shownKey) === '1') {
-      return
-    }
   } catch {
+    logAutoSurface('sessionStorage unavailable while checking dismiss key')
     /* sessionStorage unavailable */
+  }
+  if (shownAutoSurfaceThisPageLoad.has(shownKey)) {
+    logAutoSurface('skip: already shown once for this site+href in this page load', { shownKey })
+    return
   }
   const tabId = await getShopperTabId()
   if (tabId === undefined) {
+    logAutoSurface('skip: shopper tab id unavailable')
     removeAutoOverlayOnly()
     return
   }
+  logAutoSurface('resolved shopper tab id', { tabId })
   const existing = document.getElementById(AUTO_SURFACE_HOST_ID)
   if (
     existing instanceof HTMLElement &&
@@ -142,6 +199,7 @@ const evaluateAutoSurface = async (): Promise<void> => {
     existing.dataset.tabId === String(tabId) &&
     existing.dataset.href === href
   ) {
+    logAutoSurface('skip: manual in-page popup already open for same tab+href')
     return
   }
   if (
@@ -149,14 +207,13 @@ const evaluateAutoSurface = async (): Promise<void> => {
     existing?.dataset.href === href &&
     existing?.dataset.tabId === String(tabId)
   ) {
+    logAutoSurface('skip: identical auto popup host already mounted')
     return
   }
+  logAutoSurface('mounting auto popup', { siteId: site.id, tabId, href })
   removeAutoSurfaceOverlay()
-  try {
-    sessionStorage.setItem(shownKey, '1')
-  } catch {
-    /* sessionStorage unavailable */
-  }
+  shownAutoSurfaceThisPageLoad.add(shownKey)
+  logAutoSurface('marked shown-once key in memory', { shownKey })
   mountShopFriendPagePopupIframe({
     tabId,
     persistDismissOnClose: true,
@@ -169,8 +226,13 @@ const scheduleAutoSurface = (): void => {
   if (autoSurfaceTimer !== null) {
     clearTimeout(autoSurfaceTimer)
   }
+  logAutoSurface('scheduleAutoSurface queued', {
+    href: window.location.href,
+    debounceMs: AUTOSURFACE_DEBOUNCE_MS,
+  })
   autoSurfaceTimer = setTimeout(() => {
     autoSurfaceTimer = null
+    logAutoSurface('running evaluateAutoSurface from timer', { href: window.location.href })
     void evaluateAutoSurface()
   }, AUTOSURFACE_DEBOUNCE_MS)
 }
@@ -186,6 +248,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === SHOW_SHOPFRIEND_PAGE_POPUP) {
     const tabId = typeof message.tabId === 'number' ? message.tabId : undefined
     if (tabId !== undefined) {
+      logAutoSurface('received SHOW_SHOPFRIEND_PAGE_POPUP', { tabId, href: window.location.href })
       removeAutoSurfaceOverlay()
       const href = window.location.href
       mountShopFriendPagePopupIframe({
@@ -197,9 +260,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const matched = sites?.length ? findSiteForLocation(sites, window.location) : undefined
         const host = document.getElementById(AUTO_SURFACE_HOST_ID)
         if (!host || !matched?.id || host.dataset.persistDismiss !== '0') {
+          logAutoSurface('manual popup mounted without siteId enrichment', {
+            hasHost: Boolean(host),
+            matchedSiteId: matched?.id,
+          })
           return
         }
         host.dataset.siteId = matched.id
+        logAutoSurface('manual popup enriched with siteId', { siteId: matched.id, href })
       })
     }
     return false
@@ -208,13 +276,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 })
 
 const observer = new MutationObserver(() => {
-  schedulePublish()
-  scheduleAutoSurface()
+  // Amazon mutates the DOM constantly; only re-run URL-driven flows when URL actually changes.
+  scheduleForUrlChangeIfNeeded()
 })
 
 observer.observe(document.documentElement, { childList: true, subtree: true })
 
 window.addEventListener('popstate', () => {
+  logAutoSurface('popstate detected')
+  lastKnownHref = window.location.href
   schedulePublish()
   scheduleAutoSurface()
 })
@@ -222,6 +292,8 @@ window.addEventListener('popstate', () => {
 const originalPushState = history.pushState.bind(history)
 history.pushState = (data: unknown, unused: string, url?: string | URL | null) => {
   originalPushState(data, unused, url)
+  logAutoSurface('history.pushState detected', { url: String(url ?? '') })
+  lastKnownHref = window.location.href
   schedulePublish()
   scheduleAutoSurface()
 }
@@ -229,6 +301,8 @@ history.pushState = (data: unknown, unused: string, url?: string | URL | null) =
 const originalReplaceState = history.replaceState.bind(history)
 history.replaceState = (data: unknown, unused: string, url?: string | URL | null) => {
   originalReplaceState(data, unused, url)
+  logAutoSurface('history.replaceState detected', { url: String(url ?? '') })
+  lastKnownHref = window.location.href
   schedulePublish()
   scheduleAutoSurface()
 }
@@ -238,6 +312,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     return
   }
   if (changes[AUTO_SURFACE_GLOBALLY_DISABLED_KEY] !== undefined || changes[SITE_EXTRACTOR_CONFIG_JSON_KEY] !== undefined) {
+    logAutoSurface('storage change triggers auto-surface reevaluation', {
+      changedKeys: Object.keys(changes),
+    })
     scheduleAutoSurface()
   }
 })
